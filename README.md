@@ -1,45 +1,92 @@
-# Brisas Env CLI (be)
+# 🌬️ Brisas Environment CLI (be)
 
-Your portable, robust, and self-updating development environment manager.
+> **Tu entorno de desarrollo completo, portátil y automático en segundos.**
 
-## 🚀 Features
+**Brisas Environment (be)** es una herramienta de línea de comandos (CLI) diseñada para automatizar la configuración de entornos de desarrollo en Windows. Olvídate de instalaciones complejas, variables de entorno rotas o contaminar tu sistema operativo.
 
-*   **Zero Dependencies**: Just download `be.exe`.
-*   **Auto-Setup**: Installs Node.js, MinGW (GCC), and PowerShell automatically.
-*   **Portable Shell**: `be shell` launches a terminal with all tools in PATH.
-*   **Admin Tools**: Built-in manifest generator and auto-updater.
-*   **Verify Integrity**: All downloads are SHA256 verified.
+**Ideal para entornos restringidos:** ¿Estás en una computadora de la escuela, universidad o trabajo donde **no tienes contraseña de Administrador**? Brisas es la solución. Te permite tener un entorno de programación profesional (Node, GCC, etc.) funcionando en segundos, sin pedir permisos elevados y sin dejar rastros al terminar.
 
-## 🛠️ Installation
+Con un solo comando, **Brisas** descarga, configura y te entrega un entorno con **Node.js**, **Compiladores C/C++ (MinGW)** y **PowerShell 7**, todo listo para usar.
 
-1.  Download `be.exe` from [Releases](https://github.com/DQM27/brisas-cli/releases).
-2.  Put it anywhere (e.g., `C:\Brisas`).
-3.  Run it!
+## 🚀 Características Principales
 
-## 📖 Usage
+*   **⚡ Instalación Automática**: Descarga las versiones exactas definidas en el manifiesto `tools.json`.
+*   **🎒 Totalmente Portátil**: Todo se instala en `%LOCALAPPDATA%`. No ensucia tu sistema ni requiere Admin.
+*   **🛡️ Entorno Aislado**: Las herramientas se agregan al PATH solo para tu usuario o temporalmente en la terminal.
+*   **🔄 Actualizaciones Fáciles**: Si cambia la versión en `tools.json`, `be setup` actualiza tu entorno automáticamente.
+*   **📦 Shell Portátil**: Inicia una terminal `pwsh` con todo cargado sin tocar tu configuración global.
+*   **🚫 Cero Emojis (Modo Serio)**: Interfaz limpia y profesional para entornos corporativos o minimalistas.
 
-### Interactive Mode
-Double-click `be.exe` to see the menu.
+## 🛠️ Herramientas Incluidas (Por Defecto)
 
-### Command Line
+*   **Node.js**: Entorno de ejecución para JavaScript.
+*   **MinGW-w64 (GCC)**: Compilador de C y C++ robusto para Windows.
+*   **PowerShell**: La terminal moderna y potente de Microsoft.
+*(Y cualquier otra que agregues a tu `tools.json` personalizado)*
+
+## 📥 Instalación
+
+Simplemente descarga el ejecutable `be.exe` (desde Releases) y colócalo en una carpeta de tu preferencia (ej: `C:\Brisas`).
+
+## 📖 Uso
+
+Puedes usar **Brisas** de dos formas:
+
+### 1. Menú Interactivo
+Si ejecutas `be.exe` (doble clic) sin argumentos, verás un menú visual para elegir qué hacer:
+*   **Instalar / Reparar**: Descarga todo lo necesario.
+*   **Iniciar Shell**: Abre una terminal lista para trabajar.
+*   **Verificar Estado**: Te dice si te falta algo.
+*   **Desinstalar**: Borra todo.
+
+### 2. Línea de Comandos (Automatización)
+Para usuarios avanzados o scripts:
+
 ```powershell
-be setup        # Install tools
-be shell        # Open portable terminal
-be run npm start # Run a command
-be status       # Check health
-be clean        # Uninstall everything
+# Instalar / Actualizar entorno
+be setup
+
+# Abrir terminal portable
+be shell
+
+# Ejecutar un comando específico dentro del entorno
+be run npm install
+be run gcc main.c -o app
+
+# Verificar estado
+be status
+
+# Desinstalar todo (Limpieza total)
+be clean
+
+# Ayuda
+be help
 ```
 
-### Admin (Update Tools)
+### 🧬 (Avanzado) Generador de Manifiestos
+Si quieres controlar qué versiones instalar o agregar herramientas propias, puedes editar el archivo `tools.json`.
+Brisas incluye un asistente para esto:
+
 ```powershell
 be manifest-gen
 ```
-1. Paste new URLs.
-2. Auto-hashes and updates `tools.json`.
-3. Pushes to GitHub automatically.
+Este comando te permitirá editar las URLs, versiones y calcular automáticamente los Hashes SHA256 de seguridad, e incluso subir los cambios a Git.
 
-## 📦 Build from Source
+## 📂 Estructura de Archivos
 
-```powershell
-cargo build --release
+Al instalarse, Brisas crea la siguiente estructura en `C:\Users\TU_USUARIO\AppData\Local`:
+
 ```
+AppData/Local/
+├── node/           # Node.js portable
+├── mingw64/        # GCC/G++ y herramientas de compilación
+├── pwsh/           # PowerShell core
+```
+
+## 📄 Licencia
+
+Este proyecto es **Software Libre** bajo la licencia **MIT**.
+Eres libre de usarlo, modificarlo y compartirlo. ¡Disfrútalo!
+
+---
+Hecho con ❤️ y **Rust** 🦀 por el equipo Brisas.

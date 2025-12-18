@@ -1,0 +1,26 @@
+# Rust artifacts
+target/
+**/*.rs.bk
+
+# Brisas Environment State & Config
+.dev-env-config
+.mingw64-config
+
+# Installed Tools
+node/
+mingw64/
+pwsh/
+
+# Downloads/Cache
+*.zip
+*.7z
+*_extract/
+BrisasEnv_Cache/
+
+# Executables
+*.exe
+*.dll
+
+# OS
+Thumbs.db
+Desktop.ini
