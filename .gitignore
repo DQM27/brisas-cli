@@ -5,6 +5,8 @@ target/
 # Brisas Environment State & Config
 .dev-env-config
 .mingw64-config
+dev-env.ps1
+ag-run.ps1
 
 # Installed Tools
 node/
