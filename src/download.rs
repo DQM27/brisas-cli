@@ -1,25 +1,47 @@
+use crate::errors::BeError;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::fs::{self, File};
-use std::io::{self, Cursor};
+use std::io::{self, Read, Write};
 use std::path::Path;
 use zip::ZipArchive;
 
-pub fn download_file(url: &str, target_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    println!("⬇️  Descargando: {}", url);
-    let response = reqwest::blocking::get(url)?;
+pub fn download_file(url: &str, target_path: &Path) -> Result<(), BeError> {
+    println!("⬇️  Requerido: {}", url);
+    let mut response = reqwest::blocking::get(url)?;
 
     // Check status
     if !response.status().is_success() {
-        return Err(format!("Error descargando: {}", response.status()).into());
+        return Err(BeError::Reqwest(response.error_for_status().unwrap_err()));
     }
 
-    let mut content = Cursor::new(response.bytes()?);
+    let total_size = response.content_length().unwrap_or(0);
+    let pb = ProgressBar::new(total_size);
+    pb.set_style(ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+        .unwrap()
+        .progress_chars("#>-"));
+
     let mut file = File::create(target_path)?;
-    std::io::copy(&mut content, &mut file)?;
+
+    // Stream copy with progress
+    let mut downloaded: u64 = 0;
+    let mut buffer = [0; 8192];
+    loop {
+        let bytes_read = response.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        file.write_all(&buffer[..bytes_read])?;
+        downloaded += bytes_read as u64;
+        pb.set_position(downloaded);
+    }
+
+    pb.finish_with_message("Descarga completada");
 
     Ok(())
 }
 
-pub fn extract_zip(zip_path: &Path, extract_to: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub fn extract_zip(zip_path: &Path, extract_to: &Path) -> Result<(), BeError> {
     println!(
         "📦 Extrayendo {} en {}...",
         zip_path.display(),

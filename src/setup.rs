@@ -1,4 +1,5 @@
 use crate::download;
+use crate::errors::BeError;
 use inquire::{Select, Text};
 use std::env;
 use std::fs;
@@ -6,15 +7,15 @@ use std::path::{Path, PathBuf};
 use winreg::enums::*;
 use winreg::RegKey;
 
-pub fn setup_system() {
+pub fn setup_system() -> Result<(), BeError> {
     println!("🛠️  Configurando Entorno Brisas en el Sistema...");
 
-    let local_app_data = env::var("LOCALAPPDATA").expect("No se encontró %LOCALAPPDATA%");
+    let local_app_data = env::var("LOCALAPPDATA")
+        .map_err(|_| BeError::Config("No se encontró %LOCALAPPDATA%".into()))?;
     let target_base = PathBuf::from(&local_app_data);
     println!("📂 Destino: {}", target_base.display());
 
     // Tools def: (Name, CheckFile, DownloadURL)
-    // URLs can be updated. Using stable versions.
     let tools = vec![
         ("node", "node.exe", "https://nodejs.org/dist/v22.12.0/node-v22.12.0-win-x64.zip"),
         ("mingw64", "bin/gcc.exe", "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.2.0-17.0.6-12.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-14.2.0-llvm-19.1.1-mingw-w64ucrt-12.0.0-r2.zip"),
@@ -25,8 +26,6 @@ pub fn setup_system() {
 
     // 1. Check existing
     for (name, check_file, _) in &tools {
-        // Special handle for extracted folders. Node zip extracts to "node-v22...", MinGW to "mingw64".
-        // We want target to be "node", "mingw64", "pwsh".
         let target_path = target_base.join(name);
         if target_path.join(check_file).exists() {
             println!("  ✅ {} ya existe en AppData.", name);
@@ -43,70 +42,70 @@ pub fn setup_system() {
             "🔍 Buscar en carpeta local (Pendrive/Descargas)",
             "⬇️  Descargar de Internet (Automático)",
         ];
-        let ans = Select::new("¿Cómo deseas obtener las herramientas?", options.clone()).prompt();
+        let ans = Select::new("¿Cómo deseas obtener las herramientas?", options.clone())
+            .prompt()
+            .map_err(|_| BeError::Cancelled)?;
 
-        match ans {
-            Ok(choice) => {
-                if choice == options[0] {
-                    // SEARCH LOCAL
-                    handle_local_search(&tools, &target_base, &mut found_tools);
-                } else {
-                    // DOWNLOAD
-                    handle_download(&tools, &target_base, &mut found_tools);
-                }
-            }
-            Err(_) => println!("Operación cancelada."),
+        if ans == options[0] {
+            // SEARCH LOCAL
+            handle_local_search(&tools, &target_base, &mut found_tools)?;
+        } else {
+            // DOWNLOAD
+            handle_download(&tools, &target_base, &mut found_tools)?;
         }
     }
 
     // Register Registry
-    register_in_path(&target_base);
+    register_in_path(&target_base)?;
+
+    Ok(())
 }
 
 fn handle_local_search(
     tools: &[(&str, &str, &str)],
     target_base: &Path,
     found_tools: &mut Vec<(String, PathBuf)>,
-) {
+) -> Result<(), BeError> {
     let source_input = Text::new("Ingresa la ruta de la carpeta origen:")
         .with_default("C:\\Users\\femprobrisas\\Downloads")
-        .prompt();
+        .prompt()
+        .map_err(|_| BeError::Cancelled)?;
 
-    if let Ok(src) = source_input {
-        let source_path = PathBuf::from(&src);
-        if !source_path.exists() {
-            eprintln!("❌ La ruta origen no existe.");
-            return;
+    let source_path = PathBuf::from(&source_input);
+    if !source_path.exists() {
+        return Err(BeError::Setup("La ruta origen no existe.".into()));
+    }
+
+    for (name, check_file, _) in tools {
+        let target_path = target_base.join(name);
+        if target_path.exists() {
+            continue;
         }
 
-        for (name, check_file, _) in tools {
-            let target_path = target_base.join(name);
-            if target_path.exists() {
-                continue;
-            }
+        println!("🔍 Buscando {}...", name);
+        if let Some(folder) = find_folder_containing(&source_path, check_file) {
+            println!("  📦 Copiando a {}...", target_path.display());
+            let options = fs_extra::dir::CopyOptions::new().content_only(true);
+            fs::create_dir_all(&target_path)?;
 
-            println!("🔍 Buscando {}...", name);
-            if let Some(folder) = find_folder_containing(&source_path, check_file) {
-                println!("  📦 Copiando a {}...", target_path.display());
-                let options = fs_extra::dir::CopyOptions::new().content_only(true);
-                fs::create_dir_all(&target_path).unwrap();
-                if let Err(e) = fs_extra::dir::copy(&folder, &target_path, &options) {
-                    eprintln!("❌ Error copiando {}: {}", name, e);
-                } else {
-                    found_tools.push((name.to_string(), target_path));
-                }
+            if let Err(e) = fs_extra::dir::copy(&folder, &target_path, &options) {
+                // fs_extra error is distinct, we map it manually or just stringify
+                return Err(BeError::Setup(format!("Error copiando {}: {}", name, e)));
             } else {
-                eprintln!("❌ No se encontró {} en el origen.", name);
+                found_tools.push((name.to_string(), target_path));
             }
+        } else {
+            eprintln!("❌ No se encontró {} en el origen.", name);
         }
     }
+    Ok(())
 }
 
 fn handle_download(
     tools: &[(&str, &str, &str)],
     target_base: &Path,
     found_tools: &mut Vec<(String, PathBuf)>,
-) {
+) -> Result<(), BeError> {
     for (name, _, url) in tools {
         let target_path = target_base.join(name);
         if target_path.exists() {
@@ -118,46 +117,35 @@ fn handle_download(
         let temp_zip = std::env::temp_dir().join(&zip_name);
 
         // Download
-        if let Err(e) = download::download_file(url, &temp_zip) {
-            eprintln!("❌ Error descargando {}: {}", name, e);
-            continue;
-        }
+        download::download_file(url, &temp_zip)?;
 
         // Extract
-        // Caution: Node zip extracts to "node-vXX-win-x64", MinGW to "mingw64", Pwsh files are at root of zip.
-        // We need to handle this structure.
-
         let temp_extract = std::env::temp_dir().join(format!("{}_extract", name));
         if temp_extract.exists() {
             let _ = fs::remove_dir_all(&temp_extract);
         }
 
-        if let Err(e) = download::extract_zip(&temp_zip, &temp_extract) {
-            eprintln!("❌ Error extrayendo {}: {}", name, e);
-            continue;
-        }
+        download::extract_zip(&temp_zip, &temp_extract)?;
 
         // Move to target
-        // Logic: Find the "real" root inside extract.
-        // For PWSH, items are in root. For Node, in subdir.
-
         let mut source_to_copy = temp_extract.clone();
 
-        // Peek inside to see if there is a single folder
         if let Ok(entries) = fs::read_dir(&temp_extract) {
             let items: Vec<_> = entries.filter_map(Result::ok).collect();
             if items.len() == 1 && items[0].path().is_dir() {
-                // It's likely a nested root (standard for Node/MinGW zips)
                 source_to_copy = items[0].path();
             }
         }
 
         println!("  📦 Instalando en {}...", target_path.display());
         let options = fs_extra::dir::CopyOptions::new().content_only(true);
-        fs::create_dir_all(&target_path).unwrap();
+        fs::create_dir_all(&target_path)?;
 
         if let Err(e) = fs_extra::dir::copy(&source_to_copy, &target_path, &options) {
-            eprintln!("❌ Falla al mover archivos: {}", e);
+            return Err(BeError::Setup(format!(
+                "Error moviendo archivos de {}: {}",
+                name, e
+            )));
         } else {
             println!("  ✨ Instalado correctamente.");
             found_tools.push((name.to_string(), target_path));
@@ -167,14 +155,15 @@ fn handle_download(
         let _ = fs::remove_file(&temp_zip);
         let _ = fs::remove_dir_all(&temp_extract);
     }
+    Ok(())
 }
 
-fn register_in_path(target_base: &Path) {
+fn register_in_path(target_base: &Path) -> Result<(), BeError> {
     println!("📝 Actualizando Registro de Usuario (PATH)...");
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let env_key = hkcu
         .open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)
-        .unwrap();
+        .map_err(|e| BeError::Setup(format!("Error abriendo registro: {}", e)))?;
 
     let current_path: String = env_key.get_value("Path").unwrap_or_default();
     let mut new_path_parts: Vec<String> = current_path.split(';').map(|s| s.to_string()).collect();
@@ -195,21 +184,20 @@ fn register_in_path(target_base: &Path) {
             new_path_parts.push(p.clone());
             println!("  ➕ Añadiendo al PATH: {}", p);
             changed = true;
-        } else {
-            println!("  ℹ️  Ya está en PATH: {}", p);
         }
     }
 
     if changed {
         let new_path_str = new_path_parts.join(";");
-        match env_key.set_value("Path", &new_path_str) {
-            Ok(_) => println!("✅ Registro actualizado correctamente."),
-            Err(e) => eprintln!("❌ Error actualizando registro: {}", e),
-        }
+        env_key
+            .set_value("Path", &new_path_str)
+            .map_err(|e| BeError::Setup(format!("Error escribiendo registro: {}", e)))?;
+        println!("✅ Registro actualizado correctamente.");
         println!("⚠️  Nota: Necesitas reiniciar tus terminales para ver los cambios.");
     } else {
         println!("✨ El PATH ya estaba configurado.");
     }
+    Ok(())
 }
 
 fn find_folder_containing(base: &Path, file_pattern: &str) -> Option<PathBuf> {
@@ -229,11 +217,11 @@ fn find_folder_containing(base: &Path, file_pattern: &str) -> Option<PathBuf> {
     None
 }
 
-pub fn clean_system() {
+pub fn clean_system() -> Result<(), BeError> {
     println!("🧹 Limpiando Entorno Brisas del Sistema...");
 
-    // 1. Define paths
-    let local_app_data = env::var("LOCALAPPDATA").expect("No se encontró %LOCALAPPDATA%");
+    let local_app_data = env::var("LOCALAPPDATA")
+        .map_err(|_| BeError::Config("No se encontró %LOCALAPPDATA%".into()))?;
     let target_base = PathBuf::from(&local_app_data);
 
     let tools = vec!["node", "mingw64", "pwsh"];
@@ -244,7 +232,7 @@ pub fn clean_system() {
         if path.exists() {
             println!("  🔥 Eliminando carpeta: {}", path.display());
             if let Err(e) = fs::remove_dir_all(&path) {
-                eprintln!("❌ Error eliminando {}: {}", tool, e);
+                eprintln!("❌ Error eliminando {}: {}", tool, e); // Warn but continue
             } else {
                 println!("    ✨ Eliminado.");
             }
@@ -254,14 +242,10 @@ pub fn clean_system() {
     // 3. Clean Registry
     println!("📝 Limpiando Registro de Usuario (PATH)...");
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    // Use open_subkey_with_flags or open_subkey (read/write implied if not specified differently in some versions but safer with flags)
-    let env_key = match hkcu.open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE) {
-        Ok(k) => k,
-        Err(e) => {
-            eprintln!("❌ No se pudo abrir el registro: {}", e);
-            return;
-        }
-    };
+    // Use open_subkey_with_flags
+    let env_key = hkcu
+        .open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)
+        .map_err(|e| BeError::Setup(format!("Error abriendo registro: {}", e)))?;
 
     let current_path: String = env_key.get_value("Path").unwrap_or_default();
     let parts: Vec<&str> = current_path.split(';').collect();
@@ -276,7 +260,6 @@ pub fn clean_system() {
         target_base.join("pwsh").to_string_lossy().to_string(),
     ];
 
-    // Filter keep parts
     let new_parts: Vec<&str> = parts
         .into_iter()
         .filter(|part| {
@@ -286,19 +269,80 @@ pub fn clean_system() {
 
     let new_path_str = new_parts.join(";");
 
-    // Safety check: Don't allow empty path unless it was empty/broken
     if new_path_str.len() < 5 && !current_path.is_empty() {
-        println!("⚠️  Advertencia: El PATH resultante parece muy corto. Abortando actualización de registro por seguridad.");
-        return;
+        println!("⚠️  Advertencia: El PATH resultante parece muy corto. Abortando actualización.");
+        return Ok(());
     }
 
     if new_path_str != current_path {
-        match env_key.set_value("Path", &new_path_str) {
-            Ok(_) => println!("✅ Registro limpiado correctamente."),
-            Err(e) => eprintln!("❌ Error actualizando registro: {}", e),
-        }
+        env_key
+            .set_value("Path", &new_path_str)
+            .map_err(|e| BeError::Setup(format!("Error guardando registro: {}", e)))?;
+        println!("✅ Registro limpiado correctamente.");
         println!("⚠️  Reinicia tus terminales para ver los cambios.");
     } else {
         println!("✨ El registro ya estaba limpio.");
+    }
+    Ok(())
+}
+
+pub fn check_status() {
+    // This is safe to keep as no-result or wrap it if we want strictness,
+    // but check_status generally just prints. We can leave it or wrap it.
+    // Let's wrap it for consistency in calling convention if needed,
+    // but main.rs calls it directly. Let's leave it void as it doesn't "fail" critically.
+    println!("🔍 Verificando Estado del Sistema...");
+
+    let local_app_data = env::var("LOCALAPPDATA").unwrap_or_default();
+    if local_app_data.is_empty() {
+        println!("❌ No se pudo leer %LOCALAPPDATA%");
+        return;
+    }
+
+    let target_base = PathBuf::from(&local_app_data);
+    let tools = vec!["node", "mingw64", "pwsh"];
+    let mut missing = false;
+
+    // 1. Files
+    println!("📂 Archivos (AppData\\Local):");
+    for tool in &tools {
+        let path = target_base.join(tool);
+        if path.exists() {
+            println!("  ✅ {}: Instalado", tool);
+        } else {
+            println!("  ❌ {}: No encontrado", tool);
+            missing = true;
+        }
+    }
+
+    // 2. Registry
+    println!("📝 Registro (User PATH):");
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    if let Ok(env_key) = hkcu.open_subkey_with_flags("Environment", KEY_READ) {
+        let current_path: String = env_key.get_value("Path").unwrap_or_default();
+
+        for tool in &tools {
+            let expected = target_base.join(tool);
+            let needle = if *tool == "mingw64" {
+                expected.join("bin").to_string_lossy().to_string()
+            } else {
+                expected.to_string_lossy().to_string()
+            };
+
+            if current_path.contains(&needle) {
+                println!("  ✅ {}: En PATH", tool);
+            } else {
+                println!("  ❌ {}: Falta en PATH", tool);
+                missing = true;
+            }
+        }
+    } else {
+        println!("❌ Error leyendo Registro.");
+    }
+
+    if !missing {
+        println!("\n✨ Todo parece estar CORRECTO. El entorno debería funcionar.");
+    } else {
+        println!("\n⚠️  Hay inconsistencias. Recomendado: Selecciona '🛠️  Instalar / Reparar' en el menú.");
     }
 }

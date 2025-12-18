@@ -23,4 +23,8 @@ pub enum Commands {
     Setup,
     /// Desinstalar herramientas y limpiar registro
     Clean,
+    /// Verificar estado de la instalación
+    Status,
+    /// Ver lista de comandos y ayuda
+    Help,
 }
