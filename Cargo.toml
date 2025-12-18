@@ -3,7 +3,7 @@ winres = "0.1"
 
 [package]
 name = "be"
-version = "1.0.26"
+version = "1.0.27"
 edition = "2021"
 
 [dependencies]

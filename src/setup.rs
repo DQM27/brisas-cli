@@ -2,7 +2,6 @@ use crate::download;
 use crate::errors::BeError;
 use crate::manifest::Manifest;
 use indicatif::{ProgressBar, ProgressStyle};
-use inquire::{Select, Text};
 use log::{error, info};
 use std::env;
 use std::fs;
@@ -46,42 +45,6 @@ fn copy_dir_with_progress(src: &Path, dst: &Path) -> Result<(), BeError> {
         pb.inc(1);
     }
     pb.finish_with_message("Copia completada");
-    Ok(())
-}
-
-fn handle_local_search(
-    manifest: &Manifest,
-    target_base: &Path,
-    found_tools: &mut Vec<(String, PathBuf)>,
-) -> Result<(), BeError> {
-    let source_input = Text::new("Ingresa la ruta de la carpeta origen:")
-        .with_default("C:\\Users\\femprobrisas\\Downloads")
-        .prompt()
-        .map_err(|_| BeError::Cancelled)?;
-
-    let source_path = PathBuf::from(&source_input);
-    if !source_path.exists() {
-        return Err(BeError::Setup("La ruta origen no existe.".into()));
-    }
-
-    for tool in &manifest.tools {
-        let target_path = target_base.join(&tool.name);
-        if target_path.exists() {
-            continue;
-        }
-
-        println!("Buscando {}...", tool.name);
-        if let Some(folder) = find_folder_containing(&source_path, &tool.check_file) {
-            println!("  Copiando a {}...", target_path.display());
-
-            // Use new helper
-            copy_dir_with_progress(&folder, &target_path)?;
-
-            found_tools.push((tool.name.clone(), target_path));
-        } else {
-            eprintln!("No se encontro {} en el origen.", tool.name);
-        }
-    }
     Ok(())
 }
 
@@ -184,24 +147,11 @@ pub fn setup_system() -> Result<(), BeError> {
         }
     }
 
-    if found_tools.len() == manifest.tools.len() {
-        println!("Todas las herramientas ya estan instaladas.");
+    if found_tools.len() < manifest.tools.len() {
+        println!("Faltan herramientas. Iniciando descarga segura de herramientas...");
+        handle_download(&manifest, &target_base, &mut found_tools)?;
     } else {
-        println!("Faltan herramientas.");
-
-        let options = vec![
-            "Buscar en carpeta local (Pendrive/Descargas)",
-            "Descargar de Internet (Automatico)",
-        ];
-        let ans = Select::new("¿Cómo deseas obtener las herramientas?", options.clone())
-            .prompt()
-            .map_err(|_| BeError::Cancelled)?;
-
-        if ans == options[0] {
-            handle_local_search(&manifest, &target_base, &mut found_tools)?;
-        } else {
-            handle_download(&manifest, &target_base, &mut found_tools)?;
-        }
+        println!("Todas las herramientas ya estan instaladas.");
     }
 
     // Actualizar Registro solo si hay herramientas encontradas o instaladas
@@ -389,23 +339,6 @@ fn create_shortcut_impl(
     }
 
     Ok(())
-}
-
-fn find_folder_containing(base: &Path, file_pattern: &str) -> Option<PathBuf> {
-    for entry in walkdir::WalkDir::new(base)
-        .min_depth(1)
-        .max_depth(3)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        if entry.file_type().is_dir() {
-            let candidate = entry.path();
-            if candidate.join(file_pattern).exists() {
-                return Some(candidate.to_path_buf());
-            }
-        }
-    }
-    None
 }
 
 pub fn clean_system() -> Result<(), BeError> {
