@@ -210,13 +210,20 @@ pub fn setup_system() -> Result<(), BeError> {
             "No se encontraron herramientas. Saltando configuracion de PATH y accesos directos."
         );
     } else {
-        register_in_path(&target_base)?;
+        let pwsh_version = manifest
+            .tools
+            .iter()
+            .find(|t| t.name == "pwsh")
+            .map(|t| t.version.clone())
+            .unwrap_or_else(|| "7".to_string());
+
+        register_in_path(&target_base, &pwsh_version)?;
     }
 
     Ok(())
 }
 
-fn register_in_path(target_base: &Path) -> Result<(), BeError> {
+fn register_in_path(target_base: &Path, shell_version: &str) -> Result<(), BeError> {
     println!("Actualizando Registro de Usuario (PATH)...");
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let env_key = hkcu
@@ -265,19 +272,20 @@ fn register_in_path(target_base: &Path) -> Result<(), BeError> {
 
     // Crear Acceso Directo al Escritorio
     println!("Creando Acceso Directo en el Escritorio...");
-    create_desktop_shortcut(target_base)?;
+    create_desktop_shortcut(target_base, shell_version)?;
 
     // Crear Acceso Directo al Menu Inicio
     println!("Creando Acceso Directo en el Menu Inicio...");
-    create_start_menu_shortcut(target_base)?;
+    create_start_menu_shortcut(target_base, shell_version)?;
 
     Ok(())
 }
 
-fn create_desktop_shortcut(target_base: &Path) -> Result<(), BeError> {
+fn create_desktop_shortcut(target_base: &Path, shell_version: &str) -> Result<(), BeError> {
     let desktop =
         dirs::desktop_dir().ok_or(BeError::Setup("No se encontro el Escritorio".into()))?;
-    let link_path = desktop.join("Brisas Shell.lnk");
+    let link_name = format!("PowerShell {}.lnk", shell_version);
+    let link_path = desktop.join(&link_name);
 
     // Buscamos pwsh.exe en el sistema (Global) o local
     let pwsh_local = target_base.join("pwsh").join("pwsh.exe");
@@ -293,11 +301,12 @@ fn create_desktop_shortcut(target_base: &Path) -> Result<(), BeError> {
          $s = $ws.CreateShortcut('{}'); \
          $s.TargetPath = '{}'; \
          $s.WorkingDirectory = '{}'; \
-         $s.Description = 'Brisas Portable Shell'; \
+         $s.Description = 'PowerShell {} (Portable)'; \
          $s.Save()",
         link_path.display(),
         target,
-        dirs::home_dir().unwrap_or(PathBuf::from("C:\\")).display()
+        dirs::home_dir().unwrap_or(PathBuf::from("C:\\")).display(),
+        shell_version
     );
 
     let status = std::process::Command::new("powershell")
@@ -316,7 +325,7 @@ fn create_desktop_shortcut(target_base: &Path) -> Result<(), BeError> {
     Ok(())
 }
 
-fn create_start_menu_shortcut(target_base: &Path) -> Result<(), BeError> {
+fn create_start_menu_shortcut(target_base: &Path, shell_version: &str) -> Result<(), BeError> {
     // Intentar encontrar la carpeta de programas del menu inicio del usuario
     let data_dir = dirs::data_dir().ok_or(BeError::Setup("No se encontro AppData".into()))?;
     let start_menu = data_dir
@@ -326,19 +335,24 @@ fn create_start_menu_shortcut(target_base: &Path) -> Result<(), BeError> {
         .join("Programs");
 
     if start_menu.exists() {
-        let link_path = start_menu.join("Brisas Shell.lnk");
+        let link_name = format!("PowerShell {}.lnk", shell_version);
+        let link_path = start_menu.join(&link_name);
         // Reuse create_desktop_shortcut logic or better yet, extract common logic?
         // Let's copy logic for now to avoid refactoring risk at this stage or refactor slightly.
 
         // Refactor: We can just call a helper.
-        create_shortcut_impl(target_base, &link_path)
+        create_shortcut_impl(target_base, &link_path, shell_version)
     } else {
         println!("Omitiendo Menu Inicio (No encontrado).");
         Ok(())
     }
 }
 
-fn create_shortcut_impl(target_base: &Path, link_path: &Path) -> Result<(), BeError> {
+fn create_shortcut_impl(
+    target_base: &Path,
+    link_path: &Path,
+    shell_version: &str,
+) -> Result<(), BeError> {
     // Buscamos pwsh.exe en el sistema (Global) o local
     let pwsh_local = target_base.join("pwsh").join("pwsh.exe");
     let target = if pwsh_local.exists() {
@@ -353,11 +367,12 @@ fn create_shortcut_impl(target_base: &Path, link_path: &Path) -> Result<(), BeEr
          $s = $ws.CreateShortcut('{}'); \
          $s.TargetPath = '{}'; \
          $s.WorkingDirectory = '{}'; \
-         $s.Description = 'Brisas Portable Shell'; \
+         $s.Description = 'PowerShell {} (Portable)'; \
          $s.Save()",
         link_path.display(),
         target,
-        dirs::home_dir().unwrap_or(PathBuf::from("C:\\")).display()
+        dirs::home_dir().unwrap_or(PathBuf::from("C:\\")).display(),
+        shell_version
     );
 
     let status = std::process::Command::new("powershell")

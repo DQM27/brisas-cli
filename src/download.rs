@@ -90,14 +90,21 @@ pub fn ensure_downloaded(
 
     // 1. Verificar si existe
     if target_path.exists() {
+        println!("  Archivo encontrado en caché: {}", file_name);
         info!("Archivo encontrado en caché: {}", target_path.display());
         if let Some(hash) = expected_hash {
-            info!("Verificando integridad del archivo en caché...");
+            print!("  Verificando integridad (Caché)... ");
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
             let current_hash = calculate_hash(&target_path)?;
             if current_hash == hash {
+                println!("  Hash Correcto.");
                 info!("¡Hash correcto! Usando archivo en caché.");
                 return Ok(target_path);
             } else {
+                println!("  Hash Incorrecto.");
+                println!("    Esperado: {}", hash);
+                println!("    Obtenido: {}", current_hash);
                 warn!("Hash incorrecto en caché. Eliminando y re-descargando.");
                 warn!("Esperado: {}", hash);
                 warn!("Obtenido: {}", current_hash);
@@ -106,6 +113,7 @@ pub fn ensure_downloaded(
         } else {
             // Sin hash proporcionado, asumir que el caché está bien
             info!("Sin hash para verificar. Usando archivo en caché.");
+            println!("  Usando caché (Sin verificación de hash).");
             return Ok(target_path);
         }
     }
@@ -115,15 +123,22 @@ pub fn ensure_downloaded(
 
     // 3. Verificar después de descargar
     if let Some(hash) = expected_hash {
-        info!("Verificando integridad del archivo descargado...");
+        print!("  Verificando integridad (Descarga)... ");
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+
         let current_hash = calculate_hash(&target_path)?;
         if current_hash != hash {
+            println!("   Hash Incorrecto.");
+            println!("    Esperado: {}", hash);
+            println!("    Obtenido: {}", current_hash);
             fs::remove_file(&target_path)?; // Eliminar archivo malo
             return Err(BeError::Setup(format!(
                 "Falló la verificación de integridad para {}. Esperado {}, obtenido {}.",
                 file_name, hash, current_hash
             )));
         }
+        println!(" Hash Correcto.");
         info!("Verificación exitosa.");
     }
 
