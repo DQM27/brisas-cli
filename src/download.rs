@@ -90,9 +90,9 @@ pub fn download_file(url: &str, target_path: &Path) -> Result<(), BeError> {
     };
     let pb = ProgressBar::new(total_size);
     let style = ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+        .template("{spinner:.green}  [{elapsed_precise}] ▕{bar:40.cyan/blue}▏ {bytes}/{total_bytes} ({binary_bytes_per_sec}, ETA {eta})")
         .map_err(|e| BeError::Setup(format!("Error configurando barra de progreso: {}", e)))?
-        .progress_chars("#>-");
+        .progress_chars("█░");
     pb.set_style(style);
 
     let mut file = File::create(target_path)?;
