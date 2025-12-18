@@ -115,6 +115,7 @@ fn interactive_menu() {
         "🔍 Verificar Estado (Status)",
         "❓ Ayuda / Que es esto?",
         "🧹 Desinstalar (Clean)",
+        "⚙️  Administración (Manifest Gen)",
         "❌ Salir",
     ];
 
@@ -136,6 +137,7 @@ fn interactive_menu() {
                         Ok(())
                     }
                     "🧹 Desinstalar (Clean)" => setup::clean_system(),
+                    "⚙️  Administración (Manifest Gen)" => admin::generate_manifest(),
                     "❌ Salir" => break,
                     _ => Ok(()),
                 };
