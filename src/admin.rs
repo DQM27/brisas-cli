@@ -8,40 +8,40 @@ use std::path::Path;
 use std::process::Command;
 
 pub fn generate_manifest() -> Result<(), BeError> {
-    println!("🧙‍♂️  Asistente de Generación de Manifiesto (Admin) 🧙‍♂️");
-    println!("Este asistente te ayudará a gestionar el archivo 'tools.json'.");
+    println!("Asistente de Generacion de Manifiesto (Admin)");
+    println!("Este asistente te ayudara a gestionar el archivo 'tools.json'.");
 
     let manifest_path = Path::new("tools.json");
     let mut manifest = if manifest_path.exists() {
-        println!("📂 Se encontró un 'tools.json' existente. Cargando...");
+        println!("Se encontro un 'tools.json' existente. Cargando...");
         Manifest::load_from_file(manifest_path)?
     } else {
-        println!("✨ Creando nuevo manifiesto basado en los defaults.");
+        println!("Creando nuevo manifiesto basado en los defaults.");
         Manifest::default()
     };
 
     loop {
         let menu_options = vec![
-            "📝 Editar Herramientas (Actualizar versiones/URLs)",
-            "📡 Validar URLs (Links Check)",
-            "💾 Guardar y Salir (Git Push)",
-            "❌ Cancelar y Salir",
+            "Editar Herramientas (Actualizar versiones/URLs)",
+            "Validar URLs (Links Check)",
+            "Guardar y Salir (Git Push)",
+            "Cancelar y Salir",
         ];
 
-        let choice = Select::new("Menú Admin:", menu_options.clone())
+        let choice = Select::new("Menu Admin:", menu_options.clone())
             .prompt()
             .map_err(|_| BeError::Cancelled)?;
 
         match choice {
-            "📝 Editar Herramientas (Actualizar versiones/URLs)" => {
+            "Editar Herramientas (Actualizar versiones/URLs)" => {
                 manifest = edit_tools(manifest)?;
             }
-            "📡 Validar URLs (Links Check)" => {
+            "Validar URLs (Links Check)" => {
                 validate_all_urls(&manifest);
             }
-            "💾 Guardar y Salir (Git Push)" => {
+            "Guardar y Salir (Git Push)" => {
                 manifest.save_to_file(manifest_path)?;
-                println!("\n💾 'tools.json' guardado correctamente.");
+                println!("\n'tools.json' guardado correctamente.");
 
                 let push = Confirm::new("¿Deseas subir los cambios a GitHub ahora?")
                     .with_default(false)
@@ -53,8 +53,8 @@ pub fn generate_manifest() -> Result<(), BeError> {
                 }
                 break;
             }
-            "❌ Cancelar y Salir" => {
-                println!("Operación cancelada.");
+            "Cancelar y Salir" => {
+                println!("Operacion cancelada.");
                 break;
             }
             _ => {}
@@ -68,12 +68,12 @@ fn edit_tools(mut manifest: Manifest) -> Result<Manifest, BeError> {
     let mut new_tools = Vec::new();
 
     for tool in &manifest.tools {
-        println!("\n🔧 Herramienta: {}", tool.name);
-        println!("   Versión Actual: {}", tool.version);
+        println!("\nHerramienta: {}", tool.name);
+        println!("   Version Actual: {}", tool.version);
         println!("   URL Actual: {}", tool.url);
 
-        let actions = vec!["✅ Mantener igual", "✏️  Editar / Actualizar"];
-        let choice = Select::new("¿Qué deseas hacer?", actions.clone())
+        let actions = vec!["Mantener igual", "Editar / Actualizar"];
+        let choice = Select::new("¿Que deseas hacer?", actions.clone())
             .prompt()
             .map_err(|_| BeError::Cancelled)?;
 
@@ -81,7 +81,7 @@ fn edit_tools(mut manifest: Manifest) -> Result<Manifest, BeError> {
             new_tools.push(tool.clone());
         } else {
             // EDIT
-            let new_version = Text::new("Nueva Versión:")
+            let new_version = Text::new("Nueva Version:")
                 .with_default(&tool.version)
                 .prompt()
                 .map_err(|_| BeError::Cancelled)?;
@@ -92,7 +92,7 @@ fn edit_tools(mut manifest: Manifest) -> Result<Manifest, BeError> {
                 .map_err(|_| BeError::Cancelled)?;
 
             // Hashing
-            println!("🔄 Calculando Hash SHA256 (Descargando temporalmente)...");
+            println!("Calculando Hash SHA256 (Descargando temporalmente)...");
 
             let temp_dir = std::env::temp_dir().join("Brisas_Hash_Calc");
             if !temp_dir.exists() {
@@ -103,19 +103,19 @@ fn edit_tools(mut manifest: Manifest) -> Result<Manifest, BeError> {
             download::download_file(&new_url, &temp_file)?;
 
             let hash = download::calculate_hash(&temp_file)?;
-            println!("   🔐 Hash calculado: {}", hash);
+            println!("   Hash calculado: {}", hash);
 
             // VERIFY CONTENT
-            println!("   🔍 Verificando contenido del ZIP...");
+            println!("   Verificando contenido del ZIP...");
             let found = download::verify_zip_contains_file(&temp_file, &tool.check_file)?;
             if found {
-                println!("   ✅ Archivo clave '{}' encontrado.", tool.check_file);
+                println!("   Archivo clave '{}' encontrado.", tool.check_file);
             } else {
                 println!(
-                    "   ⚠️  ADVERTENCIA: No se encontró '{}' dentro del ZIP descargado.",
+                    "   ADVERTENCIA: No se encontro '{}' dentro del ZIP descargado.",
                     tool.check_file
                 );
-                println!("   Esto podría indicar que la URL es incorrecta o la estructura del ZIP cambió.");
+                println!("   Esto podria indicar que la URL es incorrecta o la estructura del ZIP cambio.");
 
                 let confirm = Confirm::new("¿Deseas continuar de todos modos?")
                     .with_default(false)
@@ -127,7 +127,7 @@ fn edit_tools(mut manifest: Manifest) -> Result<Manifest, BeError> {
                     // Actually, if we abort, we probably want to restart this tool's loop or keep old.
                     // For logic simplicity, if they abort, we keep the OLD tool.
                     println!(
-                        "   ↩️  Cancelando edición de {}. Se mantiene la versión anterior.",
+                        "   Cancelando edicion de {}. Se mantiene la version anterior.",
                         tool.name
                     );
                     new_tools.push(tool.clone());
@@ -154,34 +154,34 @@ fn edit_tools(mut manifest: Manifest) -> Result<Manifest, BeError> {
 }
 
 fn validate_all_urls(manifest: &Manifest) {
-    println!("\n📡 Verificando disponibilidad de URLs (HEAD Request)...");
+    println!("\nVerificando disponibilidad de URLs (HEAD Request)...");
     let client = reqwest::blocking::Client::new();
 
     for tool in &manifest.tools {
-        print!("   🔍 {}: ", tool.name);
+        print!("   {}: ", tool.name);
         use std::io::Write;
         let _ = std::io::stdout().flush();
 
         match client.head(&tool.url).send() {
             Ok(resp) => {
                 if resp.status().is_success() {
-                    println!("✅ OK ({})", resp.status());
+                    println!("OK ({})", resp.status());
                 } else {
-                    println!("❌ ERROR ({}) - Link Posiblemente Roto", resp.status());
+                    println!("ERROR ({}) - Link Posiblemente Roto", resp.status());
                 }
             }
             Err(e) => {
-                println!("❌ FALLÓ: {}", e);
+                println!("Fallo: {}", e);
             }
         }
     }
-    println!("\n--- Verificación completada ---\n");
+    println!("\n--- Verificacion completada ---\n");
     println!("Presiona Enter para continuar...");
     let _ = std::io::stdin().read_line(&mut String::new());
 }
 
 fn run_git_automation(file_path: &Path) -> Result<(), BeError> {
-    println!("🚀 Iniciando secuencia de Git...");
+    println!("Iniciando secuencia de Git...");
 
     // 1. Git Add
     println!("   > git add {:?}", file_path);
@@ -192,7 +192,7 @@ fn run_git_automation(file_path: &Path) -> Result<(), BeError> {
         .map_err(|e| BeError::Setup(format!("Error ejecutando git: {}", e)))?;
 
     if !status.success() {
-        return Err(BeError::Setup("Falló git add".into()));
+        return Err(BeError::Setup("Fallo git add".into()));
     }
 
     // 2. Git Commit
@@ -215,11 +215,11 @@ fn run_git_automation(file_path: &Path) -> Result<(), BeError> {
         .map_err(|e| BeError::Setup(format!("Error ejecutando git push: {}", e)))?;
 
     if status.success() {
-        println!("✨ ¡Subido a GitHub con éxito!");
+        println!("¡Subido a GitHub con exito!");
         info!("Manifest pushed to GitHub.");
     } else {
-        println!("⚠️  'git push' falló. Por favor verifica tus credenciales/conexión.");
-        return Err(BeError::Setup("Falló git push".into()));
+        println!("'git push' fallo. Por favor verifica tus credenciales/conexion.");
+        return Err(BeError::Setup("Fallo git push".into()));
     }
 
     Ok(())

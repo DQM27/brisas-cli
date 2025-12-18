@@ -14,7 +14,7 @@ pub fn calculate_hash(path: &Path) -> Result<String, BeError> {
 
     let pb = ProgressBar::new(total_size);
     let style = ProgressStyle::default_bar()
-        .template("{spinner:.green}  [{elapsed_precise}] ▕{bar:40.cyan/blue}▏ {bytes}/{total_bytes} ({binary_bytes_per_sec})")
+        .template("{spinner:.green}  [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({binary_bytes_per_sec})")
         .map_err(|e| BeError::Setup(format!("Error configurando barra de progreso: {}", e)))?
         .progress_chars("█░");
     pb.set_style(style);
@@ -36,7 +36,7 @@ pub fn extract_zip(zip_path: &Path, extract_to: &Path) -> Result<(), BeError> {
         zip_path.display(),
         extract_to.display()
     );
-    println!("📦 Extrayendo...");
+    println!("Extrayendo...");
 
     let file = File::open(zip_path)?;
     let mut archive = ZipArchive::new(file)?;
@@ -44,7 +44,7 @@ pub fn extract_zip(zip_path: &Path, extract_to: &Path) -> Result<(), BeError> {
 
     let pb = ProgressBar::new(len as u64);
     let style = ProgressStyle::default_bar()
-        .template("{spinner:.green}  [{elapsed_precise}] ▕{bar:40.yellow/blue}▏ {pos}/{len} archivos ({eta})")
+        .template("{spinner:.green}  [{elapsed_precise}] [{bar:40.yellow/blue}] {pos}/{len} archivos ({eta})")
         .map_err(|e| BeError::Setup(format!("Error configurando barra de progreso: {}", e)))?
         .progress_chars("█░");
     pb.set_style(style);
@@ -131,7 +131,7 @@ pub fn ensure_downloaded(
 }
 
 pub fn download_file(url: &str, target_path: &Path) -> Result<(), BeError> {
-    println!("⬇️  Descargando: {}", url);
+    println!("Descargando: {}", url);
     info!("Descargando {} a {}", url, target_path.display());
 
     let mut response = reqwest::blocking::get(url)?;
@@ -147,7 +147,7 @@ pub fn download_file(url: &str, target_path: &Path) -> Result<(), BeError> {
     };
     let pb = ProgressBar::new(total_size);
     let style = ProgressStyle::default_bar()
-        .template("{spinner:.green}  [{elapsed_precise}] ▕{bar:40.cyan/blue}▏ {bytes}/{total_bytes} ({binary_bytes_per_sec}, ETA {eta})")
+        .template("{spinner:.green}  [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({binary_bytes_per_sec}, ETA {eta})")
         .map_err(|e| BeError::Setup(format!("Error configurando barra de progreso: {}", e)))?
         .progress_chars("█░");
     pb.set_style(style);

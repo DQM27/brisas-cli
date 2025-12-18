@@ -28,7 +28,7 @@ fn copy_dir_with_progress(src: &Path, dst: &Path) -> Result<(), BeError> {
 
     let pb = ProgressBar::new(files.len() as u64);
     let style = ProgressStyle::default_bar()
-        .template("{spinner:.green}  [{elapsed_precise}] ▕{bar:40.magenta/blue}▏ {pos}/{len} archivos ({eta})")
+        .template("{spinner:.green}  [{elapsed_precise}] [{bar:40.magenta/blue}] {pos}/{len} archivos ({eta})")
         .map_err(|e| BeError::Setup(format!("Error configurando barra de progreso: {}", e)))?
         .progress_chars("█░");
     pb.set_style(style);
@@ -70,16 +70,16 @@ fn handle_local_search(
             continue;
         }
 
-        println!("🔍 Buscando {}...", tool.name);
+        println!("Buscando {}...", tool.name);
         if let Some(folder) = find_folder_containing(&source_path, &tool.check_file) {
-            println!("  📦 Copiando a {}...", target_path.display());
+            println!("  Copiando a {}...", target_path.display());
 
             // Use new helper
             copy_dir_with_progress(&folder, &target_path)?;
 
             found_tools.push((tool.name.clone(), target_path));
         } else {
-            eprintln!("❌ No se encontró {} en el origen.", tool.name);
+            eprintln!("No se encontro {} en el origen.", tool.name);
         }
     }
     Ok(())
@@ -96,7 +96,7 @@ fn handle_download(
             continue;
         }
 
-        println!("☁️  Procesando {}...", tool.name);
+        println!("Procesando {}...", tool.name);
         let zip_name = format!("{}.zip", tool.name);
 
         // ensure_downloaded maneja Caché + Verificación SHA256
@@ -119,12 +119,12 @@ fn handle_download(
             }
         }
 
-        println!("  📦 Instalando en {}...", target_path.display());
+        println!("  Instalando en {}...", target_path.display());
 
         // Use new helper instead of fs_extra
         copy_dir_with_progress(&source_to_copy, &target_path)?;
 
-        println!("  ✨ Instalado correctamente.");
+        println!("  Instalado correctamente.");
         found_tools.push((tool.name.clone(), target_path));
 
         // Limpieza (Solo dir temporal, mantén el Caché!)
@@ -134,19 +134,19 @@ fn handle_download(
 }
 
 pub fn setup_system() -> Result<(), BeError> {
-    println!("🛠️  Configurando Entorno Brisas en el Sistema...");
+    println!("Configurando Entorno Brisas en el Sistema...");
     info!("Iniciando setup_system...");
 
     let local_app_data = env::var("LOCALAPPDATA")
-        .map_err(|_| BeError::Config("No se encontró %LOCALAPPDATA%".into()))?;
+        .map_err(|_| BeError::Config("No se encontro %LOCALAPPDATA%".into()))?;
     let target_base = PathBuf::from(&local_app_data);
-    println!("📂 Destino: {}", target_base.display());
+    println!("Destino: {}", target_base.display());
 
     // CARGAR MANIFIESTO
     let manifest_path = Path::new("tools.json");
     let manifest = if manifest_path.exists() {
         info!("Cargando manifiesto desde archivo local: tools.json");
-        println!("📄 Usando manifiesto local: tools.json");
+        println!("Usando manifiesto local: tools.json");
         match Manifest::load_from_file(manifest_path) {
             Ok(m) => m,
             Err(e) => {
@@ -163,9 +163,7 @@ pub fn setup_system() -> Result<(), BeError> {
             Ok(m) => m,
             Err(e) => {
                 error!("Fallo carga remota: {}. Usando defaults compilados.", e);
-                println!(
-                    "⚠️  No se pudo cargar config remota (Offline?). Usando defaults internos."
-                );
+                println!("No se pudo cargar config remota (Offline?). Usando defaults internos.");
                 Manifest::default()
             }
         }
@@ -181,19 +179,19 @@ pub fn setup_system() -> Result<(), BeError> {
     for tool in &manifest.tools {
         let target_path = target_base.join(&tool.name);
         if target_path.join(&tool.check_file).exists() {
-            println!("  ✅ {} ya existe en AppData.", tool.name);
+            println!("  {} ya existe en AppData.", tool.name);
             found_tools.push((tool.name.clone(), target_path));
         }
     }
 
     if found_tools.len() == manifest.tools.len() {
-        println!("✨ Todas las herramientas ya están instaladas.");
+        println!("Todas las herramientas ya estan instaladas.");
     } else {
-        println!("⚠️  Faltan herramientas.");
+        println!("Faltan herramientas.");
 
         let options = vec![
-            "🔍 Buscar en carpeta local (Pendrive/Descargas)",
-            "⬇️  Descargar de Internet (Automático)",
+            "Buscar en carpeta local (Pendrive/Descargas)",
+            "Descargar de Internet (Automatico)",
         ];
         let ans = Select::new("¿Cómo deseas obtener las herramientas?", options.clone())
             .prompt()
@@ -352,22 +350,19 @@ pub fn clean_system() -> Result<(), BeError> {
         }
     }
 
-    // 2.1 Eliminar Caché de Descargas
+    // 2.1 Eliminar Cache de Descargas
     let cache_dir = std::env::temp_dir().join("BrisasEnv_Cache");
     if cache_dir.exists() {
-        println!(
-            "  🗑️  Eliminando caché de descargas: {}",
-            cache_dir.display()
-        );
+        println!("  Borrando cache de descargas: {}", cache_dir.display());
         if let Err(e) = fs::remove_dir_all(&cache_dir) {
-            eprintln!("❌ Error eliminando caché: {}", e);
+            eprintln!("Error eliminando cache: {}", e);
         } else {
-            println!("    ✨ Caché eliminado.");
+            println!("    Cache eliminado.");
         }
     }
 
     // 3. Limpiar Registro
-    println!("📝 Limpiando Registro de Usuario (PATH)...");
+    println!("Limpiando Registro de Usuario (PATH)...");
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     // Usar open_subkey_with_flags
     let env_key = hkcu
@@ -377,7 +372,7 @@ pub fn clean_system() -> Result<(), BeError> {
     let current_path: String = match env_key.get_value("Path") {
         Ok(val) => val,
         Err(e) => {
-            println!("⚠️  Advertencia: No se pudo leer el PATH actual: {}", e);
+            println!("Advertencia: No se pudo leer el PATH actual: {}", e);
             String::new()
         }
     };
@@ -403,7 +398,7 @@ pub fn clean_system() -> Result<(), BeError> {
     let new_path_str = new_parts.join(";");
 
     if new_path_str.len() < 5 && !current_path.is_empty() {
-        println!("⚠️  Advertencia: El PATH resultante parece muy corto. Abortando actualización.");
+        println!("Advertencia: El PATH resultante parece muy corto. Abortando actualizacion.");
         return Ok(());
     }
 
@@ -411,27 +406,27 @@ pub fn clean_system() -> Result<(), BeError> {
         env_key
             .set_value("Path", &new_path_str)
             .map_err(|e| BeError::Setup(format!("Error guardando registro: {}", e)))?;
-        println!("✅ Registro limpiado correctamente.");
-        println!("⚠️  Reinicia tus terminales para ver los cambios.");
+        println!("Registro limpiado correctamente.");
+        println!("Nota: Reinicia tus terminales para ver los cambios.");
         info!("Registro limpiado exitosamente.");
     } else {
-        println!("✨ El registro ya estaba limpio.");
+        println!("El registro ya estaba limpio.");
     }
     Ok(())
 }
 
 pub fn check_status() {
-    println!("🔍 Verificando Estado del Sistema...");
+    println!("Verificando Estado del Sistema...");
 
     let local_app_data = match env::var("LOCALAPPDATA") {
         Ok(val) => val,
         Err(_) => {
-            println!("❌ No se encontró %LOCALAPPDATA%.");
+            println!("Error: No se encontro %LOCALAPPDATA%.");
             return;
         }
     };
     if local_app_data.is_empty() {
-        println!("❌ %LOCALAPPDATA% está vacío.");
+        println!("Error: %LOCALAPPDATA% esta vacio.");
         return;
     }
 
@@ -440,25 +435,25 @@ pub fn check_status() {
     let mut missing = false;
 
     // 1. Archivos
-    println!("📂 Archivos (AppData\\Local):");
+    println!("Archivos (AppData\\Local):");
     for tool in &tools {
         let path = target_base.join(tool);
         if path.exists() {
-            println!("  ✅ {}: Instalado", tool);
+            println!("  {}: Instalado", tool);
         } else {
-            println!("  ❌ {}: No encontrado", tool);
+            println!("  {}: No encontrado", tool);
             missing = true;
         }
     }
 
     // 2. Registro
-    println!("📝 Registro (User PATH):");
+    println!("Registro (User PATH):");
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok(env_key) = hkcu.open_subkey_with_flags("Environment", KEY_READ) {
         let current_path: String = match env_key.get_value("Path") {
             Ok(val) => val,
             Err(e) => {
-                println!("❌ Error leyendo valor 'Path' del registro: {}", e);
+                println!("Error leyendo valor 'Path' del registro: {}", e);
                 return;
             }
         };
@@ -472,19 +467,19 @@ pub fn check_status() {
             };
 
             if current_path.contains(&needle) {
-                println!("  ✅ {}: En PATH", tool);
+                println!("  {}: En PATH", tool);
             } else {
-                println!("  ❌ {}: Falta en PATH", tool);
+                println!("  {}: Falta en PATH", tool);
                 missing = true;
             }
         }
     } else {
-        println!("❌ Error leyendo Registro.");
+        println!("Error leyendo Registro.");
     }
 
     if !missing {
-        println!("\n✨ Todo parece estar CORRECTO. El entorno debería funcionar.");
+        println!("\nTodo parece estar CORRECTO. El entorno deberia funcionar.");
     } else {
-        println!("\n⚠️  Hay inconsistencias. Recomendado: Selecciona '🛠️  Instalar / Reparar' en el menú.");
+        println!("\nHay inconsistencias. Recomendado: Selecciona 'Instalar / Reparar' en el menu.");
     }
 }

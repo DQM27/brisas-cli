@@ -38,7 +38,7 @@ fn main() {
 fn execute_command(cli: &Cli) -> Result<(), errors::BeError> {
     match &cli.command {
         Commands::Init => {
-            println!("🔍 Inicializando entorno...");
+            println!("Inicializando entorno...");
             let config = ensure_config()?;
             print_config(&config);
         }
@@ -65,7 +65,7 @@ fn execute_command(cli: &Cli) -> Result<(), errors::BeError> {
                 }
             }
 
-            println!("🚀 Iniciando terminal portable ({})", shell);
+            println!("Iniciando terminal portable ({})", shell);
             run_command(&config, &shell, &[]);
         }
         Commands::Setup => {
@@ -88,83 +88,83 @@ fn execute_command(cli: &Cli) -> Result<(), errors::BeError> {
 }
 
 fn print_help() {
-    println!("🌟 MANUAL DE USUARIO BRISAS ENV CLI 🌟");
+    println!("MANUAL DE USUARIO BRISAS ENV CLI");
     println!("--------------------------------------");
     println!("Este programa te ayuda a instalar y gestionar Node, MinGW y PowerShell sin ensuciar tu sistema.");
     println!();
-    println!("🛠️  COMANDOS DISPONIBLES:");
+    println!("COMANDOS DISPONIBLES:");
     println!(
-        "  init              -> Crea la configuración inicial (.dev-env-config) si no existe."
+        "  init              -> Crea la configuracion inicial (.dev-env-config) si no existe."
     );
     println!(
-        "  setup             -> ⬇️  DESCARGA E INSTALA automáticamente Node.js, GCC y PowerShell."
+        "  setup             -> DESCARGA E INSTALA automaticamente Node.js, GCC y PowerShell."
     );
-    println!("                       También añade estas herramientas a tu PATH (temporalmente o en registro).");
-    println!("  clean             -> 🧹 DESINSTALADOR COMPLETO. Borra las carpetas descargadas y");
+    println!("                       Tambien anade estas herramientas a tu PATH (temporalmente o en registro).");
+    println!("  clean             -> DESINSTALADOR COMPLETO. Borra las carpetas descargadas y");
     println!("                       limpia cualquier rastro dejado en el Registro de Windows.");
-    println!("  status            -> 🔍 DIAGNÓSTICO. Te dice si falta algo y si las variables de entorno");
-    println!("                       están bien configuradas.");
     println!(
-        "  shell             -> 🚀 Abre una nueva terminal (PowerShell) con todas las herramientas"
+        "  status            -> DIAGNOSTICO. Te dice si falta algo y si las variables de entorno"
+    );
+    println!("                       estan bien configuradas.");
+    println!(
+        "  shell             -> Abre una nueva terminal (PowerShell) con todas las herramientas"
     );
     println!("                       cargadas y listas para usar.");
-    println!("  run <cmd>         -> Ejecuta un comando suelto dentro del entorno 'mágico'.");
+    println!("  run <cmd>         -> Ejecuta un comando suelto dentro del entorno 'magico'.");
     println!("                       Ejemplo: 'be run npm start'");
     println!("  help              -> Muestra esta pantalla de ayuda.");
     println!();
-    println!(
-        "💡 TRUCO: Si ejecutas 'be.exe' (doble click) sin comandos, verás un MENÚ INTERACTIVO."
-    );
+    println!("TRUCO: Si ejecutas 'be.exe' (doble click) sin comandos, veras un MENU INTERACTIVO.");
 }
 
 fn interactive_menu() {
-    println!("🌟 Brisas Env Manager (CLI) 🌟");
+    println!("Brisas Env Manager (CLI)");
 
     let options = vec![
-        "🚀 Iniciar Shell Portable",
-        "🛠️  Instalar / Reparar (Setup)",
-        "🔍 Verificar Estado (Status)",
-        "❓ Ayuda / Que es esto?",
-        "🧹 Desinstalar (Clean)",
-        "⚙️  Administración (Manifest Gen)",
-        "❌ Salir",
+        "Iniciar Shell Portable",
+        "Instalar / Reparar (Setup)",
+        "Verificar Estado (Status)",
+        "Ayuda / Que es esto?",
+        "Desinstalar (Clean)",
+        "Administracion (Manifest Gen)",
+        "Salir",
     ];
 
     loop {
-        let ans = Select::new("Selecciona una opción (Usa las flechas):", options.clone()).prompt();
+        let ans = Select::new("Selecciona una opcion (Usa las flechas):", options.clone()).prompt();
         match ans {
             Ok(choice) => {
                 let result = match choice {
-                    "🚀 Iniciar Shell Portable" => ensure_config().map(|config| {
+                    "Iniciar Shell Portable" => ensure_config().map(|config| {
                         run_command(&config, "pwsh", &[]);
                     }),
-                    "🛠️  Instalar / Reparar (Setup)" => setup::setup_system(),
-                    "🔍 Verificar Estado (Status)" => {
+                    "Instalar / Reparar (Setup)" => setup::setup_system(),
+                    "Verificar Estado (Status)" => {
                         setup::check_status();
                         Ok(())
                     }
-                    "❓ Ayuda / Que es esto?" => {
+                    "Ayuda / Que es esto?" => {
                         print_help();
                         Ok(())
                     }
-                    "🧹 Desinstalar (Clean)" => setup::clean_system(),
-                    "⚙️  Administración (Manifest Gen)" => admin::generate_manifest(),
-                    "❌ Salir" => break,
+                    "Desinstalar (Clean)" => setup::clean_system(),
+                    "Administracion (Manifest Gen)" => admin::generate_manifest(),
+                    "Salir" => break,
                     _ => Ok(()),
                 };
 
                 if let Err(e) = result {
-                    eprintln!("\n❌ Ocurrió un error: {}", e);
-                    error!("Error en menú interactivo: {}", e);
+                    eprintln!("\nOcurrio un error: {}", e);
+                    error!("Error en menu interactivo: {}", e);
                     println!("Presiona Enter para continuar...");
                     let _ = std::io::stdin().read_line(&mut String::new());
                 }
             }
             Err(_) => {
-                info!("Menú cancelado o interrumpido.");
+                info!("Menu cancelado o interrumpido.");
                 break;
             }
         }
-        println!("\n--- Operación finalizada. ---\n");
+        println!("\n--- Operacion finalizada. ---\n");
     }
 }
