@@ -3,6 +3,8 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(name = "be")]
 #[command(about = "Gestor de Entorno Brisas - Herramientas de Desarrollo Portables", long_about = None)]
+#[command(disable_help_subcommand = true)]
+#[command(version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

@@ -69,3 +69,29 @@ impl Manifest {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_manifest() {
+        let json = r#"
+        {
+            "tools": [
+                {
+                    "name": "test_tool",
+                    "version": "1.0",
+                    "url": "http://example.com/tool.zip",
+                    "check_file": "bin/tool.exe"
+                }
+            ]
+        }
+        "#;
+
+        let manifest: Manifest = serde_json::from_str(json).expect("Deberia parsear correctamente");
+        assert_eq!(manifest.tools.len(), 1);
+        assert_eq!(manifest.tools[0].name, "test_tool");
+        assert_eq!(manifest.tools[0].check_file, "bin/tool.exe");
+    }
+}

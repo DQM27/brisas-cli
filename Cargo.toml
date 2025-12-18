@@ -1,6 +1,9 @@
+[build-dependencies]
+winres = "0.1"
+
 [package]
 name = "be"
-version = "1.0.20"
+version = "1.0.23"
 edition = "2021"
 
 [dependencies]
@@ -28,4 +31,9 @@ opt-level = "z"  # Optimize for size
 lto = true       # Link Time Optimization
 codegen-units = 1
 panic = "abort"  # No stack unwinding
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.0"
+tempfile = "3.8"
 

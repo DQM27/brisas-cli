@@ -185,3 +185,34 @@ pub fn verify_zip_contains_file(zip_path: &Path, file_name: &str) -> Result<bool
     }
     Ok(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_calculate_hash() {
+        let dir = std::env::temp_dir().join("be_test_hash");
+        if !dir.exists() {
+            let _ = std::fs::create_dir(&dir);
+        }
+        let file_path = dir.join("test.txt");
+        let mut file =
+            std::fs::File::create(&file_path).expect("Fallo al crear archivo temporal de prueba");
+        file.write_all(b"hello world")
+            .expect("Fallo al escribir en archivo temporal");
+
+        let hash = calculate_hash(&file_path).expect("Deberia calcular el hash");
+
+        // sha256("hello world") = b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
+        assert_eq!(
+            hash,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
+
+        // limpieza
+        let _ = std::fs::remove_file(file_path);
+        let _ = std::fs::remove_dir(dir);
+    }
+}
