@@ -1,0 +1,46 @@
+name: Build and Release CLI
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on tags like v1.0, v20.15.10
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build for Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build Release
+        run: cargo build --release --verbose
+
+      - name: Prepare Assets
+        shell: pwsh
+        run: |
+          mkdir release
+          cp target/release/be.exe release/
+          cp README.md release/
+          # Copy default manifest if exists, though binary has fallback
+          if (Test-Path tools.json) { cp tools.json release/ }
+          Compress-Archive -Path release/* -DestinationPath be-windows-x64.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: be-windows-x64.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
