@@ -1,0 +1,14 @@
+# Handle line endings automatically for files detected as text
+# and leave binary files untouched.
+* text=auto
+
+# Explicitly declare text files to always use LF (Unix-style) on checkout?
+# Actually, for a Windows-first CLI, 'auto' is safest.
+# It converts to CRLF on Windows checkouts and LF on Linux checkouts.
+
+# Deny checkout if we accidentally committed binary files as text
+*.png binary
+*.jpg binary
+*.exe binary
+*.dll binary
+*.zip binary
