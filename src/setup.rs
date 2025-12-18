@@ -1,6 +1,8 @@
 use crate::download;
 use crate::errors::BeError;
+use crate::manifest::Manifest; // Import Manifest
 use inquire::{Select, Text};
+use log::{error, info};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,31 +11,41 @@ use winreg::RegKey;
 
 pub fn setup_system() -> Result<(), BeError> {
     println!("🛠️  Configurando Entorno Brisas en el Sistema...");
+    info!("Starting setup_system...");
 
     let local_app_data = env::var("LOCALAPPDATA")
         .map_err(|_| BeError::Config("No se encontró %LOCALAPPDATA%".into()))?;
     let target_base = PathBuf::from(&local_app_data);
     println!("📂 Destino: {}", target_base.display());
 
-    // Tools def: (Name, CheckFile, DownloadURL)
-    let tools = vec![
-        ("node", "node.exe", "https://nodejs.org/dist/v22.12.0/node-v22.12.0-win-x64.zip"),
-        ("mingw64", "bin/gcc.exe", "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.2.0-17.0.6-12.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-14.2.0-llvm-19.1.1-mingw-w64ucrt-12.0.0-r2.zip"),
-        ("pwsh", "pwsh.exe", "https://github.com/PowerShell/PowerShell/releases/download/v7.4.6/PowerShell-7.4.6-win-x64.zip") 
-    ];
+    // LOAD MANIFEST
+    let manifest_path = Path::new("tools.json");
+    let manifest = if manifest_path.exists() {
+        info!("Loading manifest from local file: tools.json");
+        println!("📄 Usando manifiesto local: tools.json");
+        Manifest::load_from_file(manifest_path).unwrap_or_else(|e| {
+            error!("Failed to load local tools.json: {}", e);
+            println!("⚠️  Error leyendo tools.json. Usando defaults.");
+            Manifest::default()
+        })
+    } else {
+        // En el futuro aquí iría: Manifest::load_from_url(URL).unwrap_or(Manifest::default())
+        Manifest::default()
+    };
+    info!("Manifest loaded with {} tools.", manifest.tools.len());
 
     let mut found_tools = Vec::new();
 
     // 1. Check existing
-    for (name, check_file, _) in &tools {
-        let target_path = target_base.join(name);
-        if target_path.join(check_file).exists() {
-            println!("  ✅ {} ya existe en AppData.", name);
-            found_tools.push((name.to_string(), target_path));
+    for tool in &manifest.tools {
+        let target_path = target_base.join(&tool.name);
+        if target_path.join(&tool.check_file).exists() {
+            println!("  ✅ {} ya existe en AppData.", tool.name);
+            found_tools.push((tool.name.clone(), target_path));
         }
     }
 
-    if found_tools.len() == tools.len() {
+    if found_tools.len() == manifest.tools.len() {
         println!("✨ Todas las herramientas ya están instaladas.");
     } else {
         println!("⚠️  Faltan herramientas.");
@@ -48,10 +60,10 @@ pub fn setup_system() -> Result<(), BeError> {
 
         if ans == options[0] {
             // SEARCH LOCAL
-            handle_local_search(&tools, &target_base, &mut found_tools)?;
+            handle_local_search(&manifest, &target_base, &mut found_tools)?;
         } else {
-            // DOWNLOAD
-            handle_download(&tools, &target_base, &mut found_tools)?;
+            // DOWNLOAD (Now with Cache & Verification)
+            handle_download(&manifest, &target_base, &mut found_tools)?;
         }
     }
 
@@ -62,7 +74,7 @@ pub fn setup_system() -> Result<(), BeError> {
 }
 
 fn handle_local_search(
-    tools: &[(&str, &str, &str)],
+    manifest: &Manifest,
     target_base: &Path,
     found_tools: &mut Vec<(String, PathBuf)>,
 ) -> Result<(), BeError> {
@@ -76,60 +88,60 @@ fn handle_local_search(
         return Err(BeError::Setup("La ruta origen no existe.".into()));
     }
 
-    for (name, check_file, _) in tools {
-        let target_path = target_base.join(name);
+    for tool in &manifest.tools {
+        let target_path = target_base.join(&tool.name);
         if target_path.exists() {
             continue;
         }
 
-        println!("🔍 Buscando {}...", name);
-        if let Some(folder) = find_folder_containing(&source_path, check_file) {
+        println!("🔍 Buscando {}...", tool.name);
+        if let Some(folder) = find_folder_containing(&source_path, &tool.check_file) {
             println!("  📦 Copiando a {}...", target_path.display());
             let options = fs_extra::dir::CopyOptions::new().content_only(true);
             fs::create_dir_all(&target_path)?;
 
             if let Err(e) = fs_extra::dir::copy(&folder, &target_path, &options) {
-                // fs_extra error is distinct, we map it manually or just stringify
-                return Err(BeError::Setup(format!("Error copiando {}: {}", name, e)));
+                return Err(BeError::Setup(format!(
+                    "Error copiando {}: {}",
+                    tool.name, e
+                )));
             } else {
-                found_tools.push((name.to_string(), target_path));
+                found_tools.push((tool.name.clone(), target_path));
             }
         } else {
-            eprintln!("❌ No se encontró {} en el origen.", name);
+            eprintln!("❌ No se encontró {} en el origen.", tool.name);
         }
     }
     Ok(())
 }
 
 fn handle_download(
-    tools: &[(&str, &str, &str)],
+    manifest: &Manifest,
     target_base: &Path,
     found_tools: &mut Vec<(String, PathBuf)>,
 ) -> Result<(), BeError> {
-    for (name, _, url) in tools {
-        let target_path = target_base.join(name);
+    for tool in &manifest.tools {
+        let target_path = target_base.join(&tool.name);
         if target_path.exists() {
             continue;
         }
 
-        println!("☁️  Procesando {}...", name);
-        let zip_name = format!("{}.zip", name);
-        let temp_zip = std::env::temp_dir().join(&zip_name);
+        println!("☁️  Procesando {}...", tool.name);
+        let zip_name = format!("{}.zip", tool.name);
 
-        // Download
-        download::download_file(url, &temp_zip)?;
+        // ensure_downloaded handles Cache + SHA256 Verification
+        let cached_zip = download::ensure_downloaded(&tool.url, &zip_name, tool.sha256.as_deref())?;
 
         // Extract
-        let temp_extract = std::env::temp_dir().join(format!("{}_extract", name));
+        let temp_extract = std::env::temp_dir().join(format!("{}_extract", tool.name));
         if temp_extract.exists() {
             let _ = fs::remove_dir_all(&temp_extract);
         }
 
-        download::extract_zip(&temp_zip, &temp_extract)?;
+        download::extract_zip(&cached_zip, &temp_extract)?;
 
         // Move to target
         let mut source_to_copy = temp_extract.clone();
-
         if let Ok(entries) = fs::read_dir(&temp_extract) {
             let items: Vec<_> = entries.filter_map(Result::ok).collect();
             if items.len() == 1 && items[0].path().is_dir() {
@@ -144,15 +156,14 @@ fn handle_download(
         if let Err(e) = fs_extra::dir::copy(&source_to_copy, &target_path, &options) {
             return Err(BeError::Setup(format!(
                 "Error moviendo archivos de {}: {}",
-                name, e
+                tool.name, e
             )));
         } else {
             println!("  ✨ Instalado correctamente.");
-            found_tools.push((name.to_string(), target_path));
+            found_tools.push((tool.name.clone(), target_path));
         }
 
-        // Cleanup
-        let _ = fs::remove_file(&temp_zip);
+        // Cleanup (Only extract dir, keep Cache!)
         let _ = fs::remove_dir_all(&temp_extract);
     }
     Ok(())
@@ -169,6 +180,9 @@ fn register_in_path(target_base: &Path) -> Result<(), BeError> {
     let mut new_path_parts: Vec<String> = current_path.split(';').map(|s| s.to_string()).collect();
     let mut changed = false;
 
+    // Hardcoded logic for PATH registration is OK for now,
+    // or we could add `path_suffix` to Manifest if we want total decoupling.
+    // For now, keeping it simple as specific tools have specific bin folders.
     let paths_to_add = vec![
         target_base.join("node").to_string_lossy().to_string(),
         target_base
@@ -219,6 +233,7 @@ fn find_folder_containing(base: &Path, file_pattern: &str) -> Option<PathBuf> {
 
 pub fn clean_system() -> Result<(), BeError> {
     println!("🧹 Limpiando Entorno Brisas del Sistema...");
+    info!("Starting clean_system...");
 
     let local_app_data = env::var("LOCALAPPDATA")
         .map_err(|_| BeError::Config("No se encontró %LOCALAPPDATA%".into()))?;
@@ -232,8 +247,10 @@ pub fn clean_system() -> Result<(), BeError> {
         if path.exists() {
             println!("  🔥 Eliminando carpeta: {}", path.display());
             if let Err(e) = fs::remove_dir_all(&path) {
-                eprintln!("❌ Error eliminando {}: {}", tool, e); // Warn but continue
+                error!("Failed to remove directory {}: {}", path.display(), e);
+                eprintln!("❌ Error eliminando {}: {}", tool, e);
             } else {
+                info!("Removed directory: {}", path.display());
                 println!("    ✨ Eliminado.");
             }
         }
@@ -280,6 +297,7 @@ pub fn clean_system() -> Result<(), BeError> {
             .map_err(|e| BeError::Setup(format!("Error guardando registro: {}", e)))?;
         println!("✅ Registro limpiado correctamente.");
         println!("⚠️  Reinicia tus terminales para ver los cambios.");
+        info!("Registry cleaned successfully.");
     } else {
         println!("✨ El registro ya estaba limpio.");
     }
@@ -287,15 +305,17 @@ pub fn clean_system() -> Result<(), BeError> {
 }
 
 pub fn check_status() {
-    // This is safe to keep as no-result or wrap it if we want strictness,
-    // but check_status generally just prints. We can leave it or wrap it.
-    // Let's wrap it for consistency in calling convention if needed,
-    // but main.rs calls it directly. Let's leave it void as it doesn't "fail" critically.
     println!("🔍 Verificando Estado del Sistema...");
 
-    let local_app_data = env::var("LOCALAPPDATA").unwrap_or_default();
+    let local_app_data = match env::var("LOCALAPPDATA") {
+        Ok(val) => val,
+        Err(_) => {
+            println!("❌ No se encontró %LOCALAPPDATA%.");
+            return;
+        }
+    };
     if local_app_data.is_empty() {
-        println!("❌ No se pudo leer %LOCALAPPDATA%");
+        println!("❌ %LOCALAPPDATA% está vacío.");
         return;
     }
 
@@ -319,7 +339,13 @@ pub fn check_status() {
     println!("📝 Registro (User PATH):");
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok(env_key) = hkcu.open_subkey_with_flags("Environment", KEY_READ) {
-        let current_path: String = env_key.get_value("Path").unwrap_or_default();
+        let current_path: String = match env_key.get_value("Path") {
+            Ok(val) => val,
+            Err(e) => {
+                println!("❌ Error leyendo valor 'Path' del registro: {}", e);
+                return;
+            }
+        };
 
         for tool in &tools {
             let expected = target_base.join(tool);

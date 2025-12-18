@@ -11,6 +11,9 @@ pub enum BeError {
     #[error("Error de ZIP: {0}")]
     Zip(#[from] zip::result::ZipError),
 
+    #[error("Error de JSON: {0}")]
+    Json(#[from] serde_json::Error),
+
     #[error("Error de Configuración: {0}")]
     Config(String),
 

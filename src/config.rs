@@ -1,3 +1,4 @@
+use crate::errors::BeError;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
@@ -15,17 +16,19 @@ pub struct EnvConfig {
     pub last_updated: String,
 }
 
-pub fn ensure_config() -> EnvConfig {
+pub fn ensure_config() -> Result<EnvConfig, BeError> {
     if Path::new(CONFIG_FILE).exists() {
         if let Ok(content) = fs::read_to_string(CONFIG_FILE) {
             if let Ok(config) = serde_json::from_str::<EnvConfig>(&content) {
-                return config;
+                return Ok(config);
             }
         }
     }
 
     // Fallback: If installed via setup, look in AppData
-    let local = env::var("LOCALAPPDATA").unwrap_or_default();
+    let local = env::var("LOCALAPPDATA")
+        .map_err(|_| BeError::Config("No se encontró %LOCALAPPDATA%".into()))?;
+
     let app_data = PathBuf::from(local);
     let node_app = app_data.join("node");
     let mingw_app = app_data.join("mingw64");
@@ -42,10 +45,14 @@ pub fn ensure_config() -> EnvConfig {
 
     // If still not found, try old logic
     if node_path.is_none() {
-        node_path = find_node(&env::current_dir().unwrap());
+        if let Ok(cwd) = env::current_dir() {
+            node_path = find_node(&cwd);
+        }
     }
     if mingw_path.is_none() {
-        mingw_path = find_mingw(&env::current_dir().unwrap());
+        if let Ok(cwd) = env::current_dir() {
+            mingw_path = find_mingw(&cwd);
+        }
     }
 
     let config = EnvConfig {
@@ -54,10 +61,12 @@ pub fn ensure_config() -> EnvConfig {
         last_updated: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     };
 
-    let json = serde_json::to_string_pretty(&config).unwrap();
+    let json = serde_json::to_string_pretty(&config)
+        .map_err(|e| BeError::Config(format!("Error serializando config: {}", e)))?;
+
     let _ = fs::write(CONFIG_FILE, json);
 
-    config
+    Ok(config)
 }
 
 fn find_node(_base: &Path) -> Option<String> {

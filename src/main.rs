@@ -1,7 +1,10 @@
+mod admin; // New module
 mod cli;
 mod config;
 mod download;
 mod errors;
+mod logger;
+mod manifest;
 mod run;
 mod setup;
 
@@ -9,17 +12,24 @@ use clap::Parser;
 use cli::{Cli, Commands};
 use config::{ensure_config, print_config};
 use inquire::Select;
+use log::{error, info};
 use run::run_command;
 
 fn main() {
+    // Init Logger ignoring errors (fallback to no logs is fine for CLI ux)
+    let _ = logger::init();
+    info!("Brisas CLI started.");
+
     if std::env::args().len() == 1 {
         interactive_menu();
+        info!("Interactive menu closed.");
         return;
     }
 
     let cli = Cli::parse();
 
     if let Err(e) = execute_command(&cli) {
+        error!("Fatal Error: {}", e);
         eprintln!("\n❌ Error Fatal: {}", e);
         std::process::exit(1);
     }
@@ -29,7 +39,7 @@ fn execute_command(cli: &Cli) -> Result<(), errors::BeError> {
     match &cli.command {
         Commands::Init => {
             println!("🔍 Inicializando entorno...");
-            let config = ensure_config();
+            let config = ensure_config()?;
             print_config(&config);
         }
         Commands::Run { args } => {
@@ -38,11 +48,11 @@ fn execute_command(cli: &Cli) -> Result<(), errors::BeError> {
                     "No se proporcionó ningún comando.".into(),
                 ));
             }
-            let config = ensure_config();
+            let config = ensure_config()?;
             run_command(&config, &args[0], &args[1..]);
         }
         Commands::Shell => {
-            let config = ensure_config();
+            let config = ensure_config()?;
             let shell = "pwsh";
             println!("🚀 Iniciando terminal portable ({})", shell);
             run_command(&config, shell, &[]);
@@ -58,6 +68,9 @@ fn execute_command(cli: &Cli) -> Result<(), errors::BeError> {
         }
         Commands::Help => {
             print_help();
+        }
+        Commands::ManifestGen => {
+            admin::generate_manifest()?;
         }
     }
     Ok(())
@@ -110,11 +123,9 @@ fn interactive_menu() {
         match ans {
             Ok(choice) => {
                 let result = match choice {
-                    "🚀 Iniciar Shell Portable" => {
-                        let config = ensure_config();
+                    "🚀 Iniciar Shell Portable" => ensure_config().map(|config| {
                         run_command(&config, "pwsh", &[]);
-                        Ok(())
-                    }
+                    }),
                     "🛠️  Instalar / Reparar (Setup)" => setup::setup_system(),
                     "🔍 Verificar Estado (Status)" => {
                         setup::check_status();
@@ -131,11 +142,15 @@ fn interactive_menu() {
 
                 if let Err(e) = result {
                     eprintln!("\n❌ Ocurrió un error: {}", e);
+                    error!("Interactive menu error: {}", e);
                     println!("Presiona Enter para continuar...");
                     let _ = std::io::stdin().read_line(&mut String::new());
                 }
             }
-            Err(_) => break,
+            Err(_) => {
+                info!("Menu cancelled or interrupted.");
+                break;
+            }
         }
         println!("\n--- Operación finalizada. ---\n");
     }
