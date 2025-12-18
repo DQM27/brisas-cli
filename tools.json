@@ -1,0 +1,25 @@
+{
+  "tools": [
+    {
+      "name": "node",
+      "version": "22.12.0",
+      "url": "https://nodejs.org/dist/v22.12.0/node-v22.12.0-win-x64.zip",
+      "check_file": "node.exe",
+      "sha256": null
+    },
+    {
+      "name": "mingw64",
+      "version": "14.2.0",
+      "url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.2.0-19.1.1-12.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-14.2.0-llvm-19.1.1-mingw-w64ucrt-12.0.0-r2.zip",
+      "check_file": "bin/gcc.exe",
+      "sha256": null
+    },
+    {
+      "name": "pwsh",
+      "version": "7.4.6",
+      "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.4.6/PowerShell-7.4.6-win-x64.zip",
+      "check_file": "pwsh.exe",
+      "sha256": null
+    }
+  ]
+}

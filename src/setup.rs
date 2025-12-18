@@ -23,20 +23,28 @@ pub fn setup_system() -> Result<(), BeError> {
     let manifest = if manifest_path.exists() {
         info!("Loading manifest from local file: tools.json");
         println!("📄 Usando manifiesto local: tools.json");
-        Manifest::load_from_file(manifest_path).unwrap_or_else(|e| {
-            error!("Failed to load local tools.json: {}", e);
-            println!("⚠️  Error leyendo tools.json. Usando defaults.");
-            Manifest::default()
-        })
+        match Manifest::load_from_file(manifest_path) {
+            Ok(m) => m,
+            Err(e) => {
+                error!("Failed to load local tools.json: {}", e);
+                println!("⚠️  Error leyendo tools.json. Usando defaults.");
+                Manifest::default()
+            }
+        }
     } else {
         let remote_url = "https://raw.githubusercontent.com/DQM27/brisas-cli/main/tools.json";
         info!("Fetching remote manifest from: {}", remote_url);
         println!("🌐 Buscando manifiesto remoto...");
-        Manifest::load_from_url(remote_url).unwrap_or_else(|e| {
-            error!("Remote load failed: {}. Using compiled defaults.", e);
-            println!("⚠️  No se pudo cargar config remota (Offline?). Usando defaults internos.");
-            Manifest::default()
-        })
+        match Manifest::load_from_url(remote_url) {
+            Ok(m) => m,
+            Err(e) => {
+                error!("Remote load failed: {}. Using compiled defaults.", e);
+                println!(
+                    "⚠️  No se pudo cargar config remota (Offline?). Usando defaults internos."
+                );
+                Manifest::default()
+            }
+        }
     };
     info!("Manifest loaded with {} tools.", manifest.tools.len());
 
