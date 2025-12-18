@@ -1,6 +1,7 @@
 use crate::download;
 use crate::errors::BeError;
-use crate::manifest::Manifest; // Importar Manifest
+use crate::manifest::Manifest;
+use indicatif::{ProgressBar, ProgressStyle};
 use inquire::{Select, Text};
 use log::{error, info};
 use std::env;
@@ -8,6 +9,129 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use winreg::enums::*;
 use winreg::RegKey;
+
+// Helper function for directory copy with progress
+fn copy_dir_with_progress(src: &Path, dst: &Path) -> Result<(), BeError> {
+    if !dst.exists() {
+        fs::create_dir_all(dst)?;
+    }
+
+    let mut files = Vec::new();
+    for entry in walkdir::WalkDir::new(src)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if entry.file_type().is_file() {
+            files.push(entry.path().to_owned());
+        }
+    }
+
+    let pb = ProgressBar::new(files.len() as u64);
+    let style = ProgressStyle::default_bar()
+        .template("{spinner:.green}  [{elapsed_precise}] ▕{bar:40.magenta/blue}▏ {pos}/{len} archivos ({eta})")
+        .map_err(|e| BeError::Setup(format!("Error configurando barra de progreso: {}", e)))?
+        .progress_chars("█░");
+    pb.set_style(style);
+
+    for file_path in files {
+        let relative_path = file_path.strip_prefix(src).unwrap_or(&file_path);
+        let dst_path = dst.join(relative_path);
+
+        if let Some(parent) = dst_path.parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        fs::copy(&file_path, &dst_path)?;
+        pb.inc(1);
+    }
+    pb.finish_with_message("Copia completada");
+    Ok(())
+}
+
+fn handle_local_search(
+    manifest: &Manifest,
+    target_base: &Path,
+    found_tools: &mut Vec<(String, PathBuf)>,
+) -> Result<(), BeError> {
+    let source_input = Text::new("Ingresa la ruta de la carpeta origen:")
+        .with_default("C:\\Users\\femprobrisas\\Downloads")
+        .prompt()
+        .map_err(|_| BeError::Cancelled)?;
+
+    let source_path = PathBuf::from(&source_input);
+    if !source_path.exists() {
+        return Err(BeError::Setup("La ruta origen no existe.".into()));
+    }
+
+    for tool in &manifest.tools {
+        let target_path = target_base.join(&tool.name);
+        if target_path.exists() {
+            continue;
+        }
+
+        println!("🔍 Buscando {}...", tool.name);
+        if let Some(folder) = find_folder_containing(&source_path, &tool.check_file) {
+            println!("  📦 Copiando a {}...", target_path.display());
+
+            // Use new helper
+            copy_dir_with_progress(&folder, &target_path)?;
+
+            found_tools.push((tool.name.clone(), target_path));
+        } else {
+            eprintln!("❌ No se encontró {} en el origen.", tool.name);
+        }
+    }
+    Ok(())
+}
+
+fn handle_download(
+    manifest: &Manifest,
+    target_base: &Path,
+    found_tools: &mut Vec<(String, PathBuf)>,
+) -> Result<(), BeError> {
+    for tool in &manifest.tools {
+        let target_path = target_base.join(&tool.name);
+        if target_path.exists() {
+            continue;
+        }
+
+        println!("☁️  Procesando {}...", tool.name);
+        let zip_name = format!("{}.zip", tool.name);
+
+        // ensure_downloaded maneja Caché + Verificación SHA256
+        let cached_zip = download::ensure_downloaded(&tool.url, &zip_name, tool.sha256.as_deref())?;
+
+        // Extraer
+        let temp_extract = std::env::temp_dir().join(format!("{}_extract", tool.name));
+        if temp_extract.exists() {
+            let _ = fs::remove_dir_all(&temp_extract);
+        }
+
+        download::extract_zip(&cached_zip, &temp_extract)?;
+
+        // Mover a destino
+        let mut source_to_copy = temp_extract.clone();
+        if let Ok(entries) = fs::read_dir(&temp_extract) {
+            let items: Vec<_> = entries.filter_map(Result::ok).collect();
+            if items.len() == 1 && items[0].path().is_dir() {
+                source_to_copy = items[0].path();
+            }
+        }
+
+        println!("  📦 Instalando en {}...", target_path.display());
+
+        // Use new helper instead of fs_extra
+        copy_dir_with_progress(&source_to_copy, &target_path)?;
+
+        println!("  ✨ Instalado correctamente.");
+        found_tools.push((tool.name.clone(), target_path));
+
+        // Limpieza (Solo dir temporal, mantén el Caché!)
+        let _ = fs::remove_dir_all(&temp_extract);
+    }
+    Ok(())
+}
 
 pub fn setup_system() -> Result<(), BeError> {
     println!("🛠️  Configurando Entorno Brisas en el Sistema...");
@@ -76,10 +200,8 @@ pub fn setup_system() -> Result<(), BeError> {
             .map_err(|_| BeError::Cancelled)?;
 
         if ans == options[0] {
-            // BUSCAR LOCAL
             handle_local_search(&manifest, &target_base, &mut found_tools)?;
         } else {
-            // DESCARGAR (Ahora con Caché y Verificación)
             handle_download(&manifest, &target_base, &mut found_tools)?;
         }
     }
@@ -87,102 +209,6 @@ pub fn setup_system() -> Result<(), BeError> {
     // Actualizar Registro
     register_in_path(&target_base)?;
 
-    Ok(())
-}
-
-fn handle_local_search(
-    manifest: &Manifest,
-    target_base: &Path,
-    found_tools: &mut Vec<(String, PathBuf)>,
-) -> Result<(), BeError> {
-    let source_input = Text::new("Ingresa la ruta de la carpeta origen:")
-        .with_default("C:\\Users\\femprobrisas\\Downloads")
-        .prompt()
-        .map_err(|_| BeError::Cancelled)?;
-
-    let source_path = PathBuf::from(&source_input);
-    if !source_path.exists() {
-        return Err(BeError::Setup("La ruta origen no existe.".into()));
-    }
-
-    for tool in &manifest.tools {
-        let target_path = target_base.join(&tool.name);
-        if target_path.exists() {
-            continue;
-        }
-
-        println!("🔍 Buscando {}...", tool.name);
-        if let Some(folder) = find_folder_containing(&source_path, &tool.check_file) {
-            println!("  📦 Copiando a {}...", target_path.display());
-            let options = fs_extra::dir::CopyOptions::new().content_only(true);
-            fs::create_dir_all(&target_path)?;
-
-            if let Err(e) = fs_extra::dir::copy(&folder, &target_path, &options) {
-                return Err(BeError::Setup(format!(
-                    "Error copiando {}: {}",
-                    tool.name, e
-                )));
-            } else {
-                found_tools.push((tool.name.clone(), target_path));
-            }
-        } else {
-            eprintln!("❌ No se encontró {} en el origen.", tool.name);
-        }
-    }
-    Ok(())
-}
-
-fn handle_download(
-    manifest: &Manifest,
-    target_base: &Path,
-    found_tools: &mut Vec<(String, PathBuf)>,
-) -> Result<(), BeError> {
-    for tool in &manifest.tools {
-        let target_path = target_base.join(&tool.name);
-        if target_path.exists() {
-            continue;
-        }
-
-        println!("☁️  Procesando {}...", tool.name);
-        let zip_name = format!("{}.zip", tool.name);
-
-        // ensure_downloaded maneja Caché + Verificación SHA256
-        let cached_zip = download::ensure_downloaded(&tool.url, &zip_name, tool.sha256.as_deref())?;
-
-        // Extraer
-        let temp_extract = std::env::temp_dir().join(format!("{}_extract", tool.name));
-        if temp_extract.exists() {
-            let _ = fs::remove_dir_all(&temp_extract);
-        }
-
-        download::extract_zip(&cached_zip, &temp_extract)?;
-
-        // Mover a destino
-        let mut source_to_copy = temp_extract.clone();
-        if let Ok(entries) = fs::read_dir(&temp_extract) {
-            let items: Vec<_> = entries.filter_map(Result::ok).collect();
-            if items.len() == 1 && items[0].path().is_dir() {
-                source_to_copy = items[0].path();
-            }
-        }
-
-        println!("  📦 Instalando en {}...", target_path.display());
-        let options = fs_extra::dir::CopyOptions::new().content_only(true);
-        fs::create_dir_all(&target_path)?;
-
-        if let Err(e) = fs_extra::dir::copy(&source_to_copy, &target_path, &options) {
-            return Err(BeError::Setup(format!(
-                "Error moviendo archivos de {}: {}",
-                tool.name, e
-            )));
-        } else {
-            println!("  ✨ Instalado correctamente.");
-            found_tools.push((tool.name.clone(), target_path));
-        }
-
-        // Limpieza (Solo dir temporal, mantén el Caché!)
-        let _ = fs::remove_dir_all(&temp_extract);
-    }
     Ok(())
 }
 
@@ -311,7 +337,7 @@ pub fn clean_system() -> Result<(), BeError> {
 
     let tools = vec!["node", "mingw64", "pwsh"];
 
-    // 2. Eliminar Archivos
+    // 2. Eliminar Archivos (Instalación)
     for tool in &tools {
         let path = target_base.join(tool);
         if path.exists() {
@@ -323,6 +349,20 @@ pub fn clean_system() -> Result<(), BeError> {
                 info!("Directorio eliminado: {}", path.display());
                 println!("    ✨ Eliminado.");
             }
+        }
+    }
+
+    // 2.1 Eliminar Caché de Descargas
+    let cache_dir = std::env::temp_dir().join("BrisasEnv_Cache");
+    if cache_dir.exists() {
+        println!(
+            "  🗑️  Eliminando caché de descargas: {}",
+            cache_dir.display()
+        );
+        if let Err(e) = fs::remove_dir_all(&cache_dir) {
+            eprintln!("❌ Error eliminando caché: {}", e);
+        } else {
+            println!("    ✨ Caché eliminado.");
         }
     }
 

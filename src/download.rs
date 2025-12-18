@@ -9,11 +9,68 @@ use zip::ZipArchive;
 
 /// Calcula el hash SHA256 de un archivo y lo devuelve como string hex minúscula.
 pub fn calculate_hash(path: &Path) -> Result<String, BeError> {
-    let mut file = File::open(path)?;
+    let file = File::open(path)?;
+    let total_size = file.metadata()?.len();
+
+    let pb = ProgressBar::new(total_size);
+    let style = ProgressStyle::default_bar()
+        .template("{spinner:.green}  [{elapsed_precise}] ▕{bar:40.cyan/blue}▏ {bytes}/{total_bytes} ({binary_bytes_per_sec})")
+        .map_err(|e| BeError::Setup(format!("Error configurando barra de progreso: {}", e)))?
+        .progress_chars("█░");
+    pb.set_style(style);
+
+    let mut reader = pb.wrap_read(file);
     let mut hasher = Sha256::new();
-    io::copy(&mut file, &mut hasher)?;
+    io::copy(&mut reader, &mut hasher)?;
+
+    pb.finish_and_clear(); // Limpiar barra al terminar para no ensuciar
     let hash = hasher.finalize();
     Ok(hex::encode(hash))
+}
+
+// ... ensure_downloaded and download_file remain ...
+
+pub fn extract_zip(zip_path: &Path, extract_to: &Path) -> Result<(), BeError> {
+    info!(
+        "Extrayendo {} a {}",
+        zip_path.display(),
+        extract_to.display()
+    );
+    println!("📦 Extrayendo...");
+
+    let file = File::open(zip_path)?;
+    let mut archive = ZipArchive::new(file)?;
+    let len = archive.len();
+
+    let pb = ProgressBar::new(len as u64);
+    let style = ProgressStyle::default_bar()
+        .template("{spinner:.green}  [{elapsed_precise}] ▕{bar:40.yellow/blue}▏ {pos}/{len} archivos ({eta})")
+        .map_err(|e| BeError::Setup(format!("Error configurando barra de progreso: {}", e)))?
+        .progress_chars("█░");
+    pb.set_style(style);
+
+    for i in 0..len {
+        let mut file = archive.by_index(i)?;
+        let outpath = match file.enclosed_name() {
+            Some(path) => extract_to.join(path),
+            None => continue,
+        };
+
+        if (*file.name()).ends_with('/') {
+            fs::create_dir_all(&outpath)?;
+        } else {
+            if let Some(p) = outpath.parent() {
+                if !p.exists() {
+                    fs::create_dir_all(p)?;
+                }
+            }
+            let mut outfile = File::create(&outpath)?;
+            io::copy(&mut file, &mut outfile)?;
+        }
+        pb.inc(1);
+    }
+    pb.finish_with_message("Extracción completada");
+    Ok(())
 }
 
 /// Descarga un archivo, utilizando un directorio de caché local.
@@ -110,39 +167,6 @@ pub fn download_file(url: &str, target_path: &Path) -> Result<(), BeError> {
     }
 
     pb.finish_with_message("Descarga completada");
-    Ok(())
-}
-
-pub fn extract_zip(zip_path: &Path, extract_to: &Path) -> Result<(), BeError> {
-    info!(
-        "Extrayendo {} a {}",
-        zip_path.display(),
-        extract_to.display()
-    );
-    println!("📦 Extrayendo...");
-
-    let file = File::open(zip_path)?;
-    let mut archive = ZipArchive::new(file)?;
-
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-        let outpath = match file.enclosed_name() {
-            Some(path) => extract_to.join(path),
-            None => continue,
-        };
-
-        if (*file.name()).ends_with('/') {
-            fs::create_dir_all(&outpath)?;
-        } else {
-            if let Some(p) = outpath.parent() {
-                if !p.exists() {
-                    fs::create_dir_all(p)?;
-                }
-            }
-            let mut outfile = File::create(&outpath)?;
-            io::copy(&mut file, &mut outfile)?;
-        }
-    }
     Ok(())
 }
 
