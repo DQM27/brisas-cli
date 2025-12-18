@@ -31,7 +31,7 @@ impl Manifest {
                 Tool {
                     name: "mingw64".into(),
                     version: "14.2.0".into(),
-                    url: "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.2.0-19.1.1-12.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-14.2.0-llvm-19.1.1-mingw-w64ucrt-12.0.0-r2.zip".into(),
+                    url: "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.2.0posix-19.1.1-12.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-14.2.0-llvm-19.1.1-mingw-w64ucrt-12.0.0-r2.zip".into(),
                     check_file: "bin/gcc.exe".into(),
                     sha256: None,
                 },
