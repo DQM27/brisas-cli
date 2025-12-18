@@ -29,8 +29,14 @@ pub fn setup_system() -> Result<(), BeError> {
             Manifest::default()
         })
     } else {
-        // En el futuro aquí iría: Manifest::load_from_url(URL).unwrap_or(Manifest::default())
-        Manifest::default()
+        let remote_url = "https://raw.githubusercontent.com/DQM27/brisas-cli/main/tools.json";
+        info!("Fetching remote manifest from: {}", remote_url);
+        println!("🌐 Buscando manifiesto remoto...");
+        Manifest::load_from_url(remote_url).unwrap_or_else(|e| {
+            error!("Remote load failed: {}. Using compiled defaults.", e);
+            println!("⚠️  No se pudo cargar config remota (Offline?). Usando defaults internos.");
+            Manifest::default()
+        })
     };
     info!("Manifest loaded with {} tools.", manifest.tools.len());
 
@@ -176,7 +182,13 @@ fn register_in_path(target_base: &Path) -> Result<(), BeError> {
         .open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)
         .map_err(|e| BeError::Setup(format!("Error abriendo registro: {}", e)))?;
 
-    let current_path: String = env_key.get_value("Path").unwrap_or_default();
+    let current_path: String = match env_key.get_value("Path") {
+        Ok(val) => val,
+        Err(e) => {
+            println!("⚠️  Advertencia: No se pudo leer el PATH actual: {}", e);
+            String::new()
+        }
+    };
     let mut new_path_parts: Vec<String> = current_path.split(';').map(|s| s.to_string()).collect();
     let mut changed = false;
 
@@ -264,7 +276,13 @@ pub fn clean_system() -> Result<(), BeError> {
         .open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)
         .map_err(|e| BeError::Setup(format!("Error abriendo registro: {}", e)))?;
 
-    let current_path: String = env_key.get_value("Path").unwrap_or_default();
+    let current_path: String = match env_key.get_value("Path") {
+        Ok(val) => val,
+        Err(e) => {
+            println!("⚠️  Advertencia: No se pudo leer el PATH actual: {}", e);
+            String::new()
+        }
+    };
     let parts: Vec<&str> = current_path.split(';').collect();
 
     let paths_to_remove = vec![

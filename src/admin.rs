@@ -4,7 +4,7 @@ use crate::manifest::{Manifest, Tool};
 use inquire::{Confirm, Select, Text};
 use log::info;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 pub fn generate_manifest() -> Result<(), BeError> {
