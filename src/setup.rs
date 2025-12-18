@@ -151,14 +151,14 @@ pub fn setup_system() -> Result<(), BeError> {
             Ok(m) => m,
             Err(e) => {
                 error!("Fallo al cargar tools.json local: {}", e);
-                println!("⚠️  Error leyendo tools.json. Usando defaults.");
+                println!("Error leyendo tools.json. Usando defaults.");
                 Manifest::default()
             }
         }
     } else {
         let remote_url = "https://raw.githubusercontent.com/DQM27/brisas-cli/main/tools.json";
         info!("Obteniendo manifiesto remoto desde: {}", remote_url);
-        println!("🌐 Buscando manifiesto remoto...");
+        println!("Buscando manifiesto remoto...");
         match Manifest::load_from_url(remote_url) {
             Ok(m) => m,
             Err(e) => {
@@ -204,14 +204,20 @@ pub fn setup_system() -> Result<(), BeError> {
         }
     }
 
-    // Actualizar Registro
-    register_in_path(&target_base)?;
+    // Actualizar Registro solo si hay herramientas encontradas o instaladas
+    if found_tools.is_empty() {
+        println!(
+            "No se encontraron herramientas. Saltando configuracion de PATH y accesos directos."
+        );
+    } else {
+        register_in_path(&target_base)?;
+    }
 
     Ok(())
 }
 
 fn register_in_path(target_base: &Path) -> Result<(), BeError> {
-    println!("📝 Actualizando Registro de Usuario (PATH)...");
+    println!("Actualizando Registro de Usuario (PATH)...");
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let env_key = hkcu
         .open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)
@@ -220,16 +226,14 @@ fn register_in_path(target_base: &Path) -> Result<(), BeError> {
     let current_path: String = match env_key.get_value("Path") {
         Ok(val) => val,
         Err(e) => {
-            println!("⚠️  Advertencia: No se pudo leer el PATH actual: {}", e);
+            println!("Advertencia: No se pudo leer el PATH actual: {}", e);
             String::new()
         }
     };
     let mut new_path_parts: Vec<String> = current_path.split(';').map(|s| s.to_string()).collect();
     let mut changed = false;
 
-    // Lógica harcodeada para el registro PATH está bien por ahora,
-    // o podríamos añadir `path_suffix` al Manifiesto si queremos desacoplamiento total.
-    // Por ahora, manteniéndolo simple ya que las herramientas tienen carpetas bin específicas.
+    // Logica harcodeada para el registro PATH
     let paths_to_add = vec![
         target_base.join("node").to_string_lossy().to_string(),
         target_base
@@ -243,7 +247,7 @@ fn register_in_path(target_base: &Path) -> Result<(), BeError> {
     for p in paths_to_add {
         if !new_path_parts.contains(&p) {
             new_path_parts.push(p.clone());
-            println!("  ➕ Añadiendo al PATH: {}", p);
+            println!("  Anadiendo al PATH: {}", p);
             changed = true;
         }
     }
@@ -253,22 +257,26 @@ fn register_in_path(target_base: &Path) -> Result<(), BeError> {
         env_key
             .set_value("Path", &new_path_str)
             .map_err(|e| BeError::Setup(format!("Error escribiendo registro: {}", e)))?;
-        println!("✅ Registro actualizado correctamente.");
-        println!("⚠️  Nota: Necesitas reiniciar tus terminales para ver los cambios.");
+        println!("Registro actualizado correctamente.");
+        println!("Nota: Necesitas reiniciar tus terminales para ver los cambios.");
     } else {
-        println!("✨ El PATH ya estaba configurado.");
+        println!("El PATH ya estaba configurado.");
     }
 
     // Crear Acceso Directo al Escritorio
-    println!("🖥️  Creando Acceso Directo en el Escritorio...");
+    println!("Creando Acceso Directo en el Escritorio...");
     create_desktop_shortcut(target_base)?;
+
+    // Crear Acceso Directo al Menu Inicio
+    println!("Creando Acceso Directo en el Menu Inicio...");
+    create_start_menu_shortcut(target_base)?;
 
     Ok(())
 }
 
 fn create_desktop_shortcut(target_base: &Path) -> Result<(), BeError> {
     let desktop =
-        dirs::desktop_dir().ok_or(BeError::Setup("No se encontró el Escritorio".into()))?;
+        dirs::desktop_dir().ok_or(BeError::Setup("No se encontro el Escritorio".into()))?;
     let link_path = desktop.join("Brisas Shell.lnk");
 
     // Buscamos pwsh.exe en el sistema (Global) o local
@@ -300,9 +308,69 @@ fn create_desktop_shortcut(target_base: &Path) -> Result<(), BeError> {
         .map_err(|e| BeError::Setup(format!("Error ejecutando PowerShell para shortcut: {}", e)))?;
 
     if status.success() {
-        println!("  ✅ Acceso directo creado: {}", link_path.display());
+        println!("  Acceso directo creado: {}", link_path.display());
     } else {
-        println!("  ⚠️  No se pudo crear el acceso directo (probablemente permisos).");
+        println!("  No se pudo crear el acceso directo (probablemente permisos).");
+    }
+
+    Ok(())
+}
+
+fn create_start_menu_shortcut(target_base: &Path) -> Result<(), BeError> {
+    // Intentar encontrar la carpeta de programas del menu inicio del usuario
+    let data_dir = dirs::data_dir().ok_or(BeError::Setup("No se encontro AppData".into()))?;
+    let start_menu = data_dir
+        .join("Microsoft")
+        .join("Windows")
+        .join("Start Menu")
+        .join("Programs");
+
+    if start_menu.exists() {
+        let link_path = start_menu.join("Brisas Shell.lnk");
+        // Reuse create_desktop_shortcut logic or better yet, extract common logic?
+        // Let's copy logic for now to avoid refactoring risk at this stage or refactor slightly.
+
+        // Refactor: We can just call a helper.
+        create_shortcut_impl(target_base, &link_path)
+    } else {
+        println!("Omitiendo Menu Inicio (No encontrado).");
+        Ok(())
+    }
+}
+
+fn create_shortcut_impl(target_base: &Path, link_path: &Path) -> Result<(), BeError> {
+    // Buscamos pwsh.exe en el sistema (Global) o local
+    let pwsh_local = target_base.join("pwsh").join("pwsh.exe");
+    let target = if pwsh_local.exists() {
+        pwsh_local.to_string_lossy().to_string()
+    } else {
+        "pwsh.exe".to_string()
+    };
+
+    // Comando PS para crear acceso directo
+    let script = format!(
+        "$ws = New-Object -ComObject WScript.Shell; \
+         $s = $ws.CreateShortcut('{}'); \
+         $s.TargetPath = '{}'; \
+         $s.WorkingDirectory = '{}'; \
+         $s.Description = 'Brisas Portable Shell'; \
+         $s.Save()",
+        link_path.display(),
+        target,
+        dirs::home_dir().unwrap_or(PathBuf::from("C:\\")).display()
+    );
+
+    let status = std::process::Command::new("powershell")
+        .arg("-NoProfile")
+        .arg("-Command")
+        .arg(&script)
+        .status()
+        .map_err(|e| BeError::Setup(format!("Error ejecutando PowerShell para shortcut: {}", e)))?;
+
+    if status.success() {
+        println!("  Acceso directo creado: {}", link_path.display());
+    } else {
+        println!("  No se pudo crear el acceso directo (probablemente permisos).");
     }
 
     Ok(())
@@ -339,13 +407,13 @@ pub fn clean_system() -> Result<(), BeError> {
     for tool in &tools {
         let path = target_base.join(tool);
         if path.exists() {
-            println!("  🔥 Eliminando carpeta: {}", path.display());
+            println!("  Eliminando carpeta: {}", path.display());
             if let Err(e) = fs::remove_dir_all(&path) {
                 error!("Fallo al eliminar directorio {}: {}", path.display(), e);
-                eprintln!("❌ Error eliminando {}: {}", tool, e);
+                eprintln!("Error eliminando {}: {}", tool, e);
             } else {
                 info!("Directorio eliminado: {}", path.display());
-                println!("    ✨ Eliminado.");
+                println!("    Eliminado.");
             }
         }
     }

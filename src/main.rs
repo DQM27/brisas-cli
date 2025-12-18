@@ -10,7 +10,7 @@ mod setup;
 
 use clap::Parser;
 use cli::{Cli, Commands};
-use config::{ensure_config, print_config};
+use config::get_env_config; // Fixed import
 use inquire::Select;
 use log::{error, info};
 use run::run_command;
@@ -30,29 +30,24 @@ fn main() {
 
     if let Err(e) = execute_command(&cli) {
         error!("Error Fatal: {}", e);
-        eprintln!("\n❌ Error Fatal: {}", e);
+        eprintln!("\nError Fatal: {}", e);
         std::process::exit(1);
     }
 }
 
 fn execute_command(cli: &Cli) -> Result<(), errors::BeError> {
     match &cli.command {
-        Commands::Init => {
-            println!("Inicializando entorno...");
-            let config = ensure_config()?;
-            print_config(&config);
-        }
         Commands::Run { args } => {
             if args.is_empty() {
                 return Err(errors::BeError::Config(
                     "No se proporcionó ningún comando.".into(),
                 ));
             }
-            let config = ensure_config()?;
+            let config = get_env_config()?;
             run_command(&config, &args[0], &args[1..]);
         }
         Commands::Shell => {
-            let config = ensure_config()?;
+            let config = get_env_config()?;
             let mut shell = "pwsh".to_string();
 
             // Try to find pwsh relative to LocalAppData
@@ -94,9 +89,6 @@ fn print_help() {
     println!();
     println!("COMANDOS DISPONIBLES:");
     println!(
-        "  init              -> Crea la configuracion inicial (.dev-env-config) si no existe."
-    );
-    println!(
         "  setup             -> DESCARGA E INSTALA automaticamente Node.js, GCC y PowerShell."
     );
     println!("                       Tambien anade estas herramientas a tu PATH (temporalmente o en registro).");
@@ -135,7 +127,7 @@ fn interactive_menu() {
         match ans {
             Ok(choice) => {
                 let result = match choice {
-                    "Iniciar Shell Portable" => ensure_config().map(|config| {
+                    "Iniciar Shell Portable" => get_env_config().map(|config| {
                         run_command(&config, "pwsh", &[]);
                     }),
                     "Instalar / Reparar (Setup)" => setup::setup_system(),

@@ -1,10 +1,7 @@
 use crate::errors::BeError;
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
-
-pub const CONFIG_FILE: &str = ".dev-env-config";
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EnvConfig {
@@ -16,18 +13,10 @@ pub struct EnvConfig {
     pub last_updated: String,
 }
 
-pub fn ensure_config() -> Result<EnvConfig, BeError> {
-    if Path::new(CONFIG_FILE).exists() {
-        if let Ok(content) = fs::read_to_string(CONFIG_FILE) {
-            if let Ok(config) = serde_json::from_str::<EnvConfig>(&content) {
-                return Ok(config);
-            }
-        }
-    }
-
-    // Fallback: If installed via setup, look in AppData
+pub fn get_env_config() -> Result<EnvConfig, BeError> {
+    // Look in AppData (Standard installation)
     let local = env::var("LOCALAPPDATA")
-        .map_err(|_| BeError::Config("No se encontró %LOCALAPPDATA%".into()))?;
+        .map_err(|_| BeError::Config("No se encontro %LOCALAPPDATA%".into()))?;
 
     let app_data = PathBuf::from(local);
     let node_app = app_data.join("node");
@@ -43,62 +32,10 @@ pub fn ensure_config() -> Result<EnvConfig, BeError> {
         mingw_path = Some(mingw_app.to_string_lossy().to_string());
     }
 
-    // If still not found, try old logic
-    if node_path.is_none() {
-        if let Ok(cwd) = env::current_dir() {
-            node_path = find_node(&cwd);
-        }
-    }
-    if mingw_path.is_none() {
-        if let Ok(cwd) = env::current_dir() {
-            mingw_path = find_mingw(&cwd);
-        }
-    }
-
-    let config = EnvConfig {
+    // Return config struct (LastUpdated is dummy/current)
+    Ok(EnvConfig {
         node_path,
         mingw_path,
         last_updated: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-    };
-
-    let json = serde_json::to_string_pretty(&config)
-        .map_err(|e| BeError::Config(format!("Error serializando config: {}", e)))?;
-
-    let _ = fs::write(CONFIG_FILE, json);
-
-    Ok(config)
-}
-
-fn find_node(_base: &Path) -> Option<String> {
-    let common = PathBuf::from(r"C:\Users\femprobrisas\node");
-    if common.exists() {
-        if let Ok(entries) = fs::read_dir(&common) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.join("node.exe").exists() {
-                    return Some(path.to_string_lossy().to_string());
-                }
-            }
-        }
-    }
-    None
-}
-
-fn find_mingw(base: &Path) -> Option<String> {
-    if let Some(parent) = base.parent() {
-        let mingw = parent.join("mingw64");
-        if mingw.join("bin/gcc.exe").exists() {
-            return Some(mingw.to_string_lossy().to_string());
-        }
-    }
-    None
-}
-
-pub fn print_config(config: &EnvConfig) {
-    if let Some(ref p) = config.node_path {
-        println!("✅ Node: {}", p);
-    }
-    if let Some(ref p) = config.mingw_path {
-        println!("✅ MinGW: {}", p);
-    }
+    })
 }

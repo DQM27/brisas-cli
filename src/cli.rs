@@ -10,8 +10,6 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Inicializar o verificar el entorno
-    Init,
     /// Ejecutar un comando en el entorno portable
     Run {
         #[arg(trailing_var_arg = true)]
