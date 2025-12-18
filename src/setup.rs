@@ -234,6 +234,53 @@ fn register_in_path(target_base: &Path) -> Result<(), BeError> {
     } else {
         println!("✨ El PATH ya estaba configurado.");
     }
+
+    // Crear Acceso Directo al Escritorio
+    println!("🖥️  Creando Acceso Directo en el Escritorio...");
+    create_desktop_shortcut(target_base)?;
+
+    Ok(())
+}
+
+fn create_desktop_shortcut(target_base: &Path) -> Result<(), BeError> {
+    let desktop =
+        dirs::desktop_dir().ok_or(BeError::Setup("No se encontró el Escritorio".into()))?;
+    let link_path = desktop.join("Brisas Shell.lnk");
+
+    // Buscamos pwsh.exe en el sistema (Global) o local
+    let pwsh_local = target_base.join("pwsh").join("pwsh.exe");
+    let target = if pwsh_local.exists() {
+        pwsh_local.to_string_lossy().to_string()
+    } else {
+        "pwsh.exe".to_string()
+    };
+
+    // Comando PS para crear acceso directo
+    let script = format!(
+        "$ws = New-Object -ComObject WScript.Shell; \
+         $s = $ws.CreateShortcut('{}'); \
+         $s.TargetPath = '{}'; \
+         $s.WorkingDirectory = '{}'; \
+         $s.Description = 'Brisas Portable Shell'; \
+         $s.Save()",
+        link_path.display(),
+        target,
+        dirs::home_dir().unwrap_or(PathBuf::from("C:\\")).display()
+    );
+
+    let status = std::process::Command::new("powershell")
+        .arg("-NoProfile")
+        .arg("-Command")
+        .arg(&script)
+        .status()
+        .map_err(|e| BeError::Setup(format!("Error ejecutando PowerShell para shortcut: {}", e)))?;
+
+    if status.success() {
+        println!("  ✅ Acceso directo creado: {}", link_path.display());
+    } else {
+        println!("  ⚠️  No se pudo crear el acceso directo (probablemente permisos).");
+    }
+
     Ok(())
 }
 

@@ -53,9 +53,20 @@ fn execute_command(cli: &Cli) -> Result<(), errors::BeError> {
         }
         Commands::Shell => {
             let config = ensure_config()?;
-            let shell = "pwsh";
+            let mut shell = "pwsh".to_string();
+
+            // Try to find pwsh relative to LocalAppData
+            if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                let pwsh_path = std::path::PathBuf::from(local)
+                    .join("pwsh")
+                    .join("pwsh.exe");
+                if pwsh_path.exists() {
+                    shell = pwsh_path.to_string_lossy().to_string();
+                }
+            }
+
             println!("🚀 Iniciando terminal portable ({})", shell);
-            run_command(&config, shell, &[]);
+            run_command(&config, &shell, &[]);
         }
         Commands::Setup => {
             setup::setup_system()?;
