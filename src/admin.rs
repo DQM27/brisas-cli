@@ -9,7 +9,7 @@ use std::process::Command;
 
 pub fn generate_manifest() -> Result<(), BeError> {
     println!("🧙‍♂️  Asistente de Generación de Manifiesto (Admin) 🧙‍♂️");
-    println!("Este asistente te ayudará a crear/actualizar el archivo 'tools.json'.");
+    println!("Este asistente te ayudará a gestionar el archivo 'tools.json'.");
 
     let manifest_path = Path::new("tools.json");
     let mut manifest = if manifest_path.exists() {
@@ -20,6 +20,51 @@ pub fn generate_manifest() -> Result<(), BeError> {
         Manifest::default()
     };
 
+    loop {
+        let menu_options = vec![
+            "📝 Editar Herramientas (Actualizar versiones/URLs)",
+            "📡 Validar URLs (Links Check)",
+            "💾 Guardar y Salir (Git Push)",
+            "❌ Cancelar y Salir",
+        ];
+
+        let choice = Select::new("Menú Admin:", menu_options.clone())
+            .prompt()
+            .map_err(|_| BeError::Cancelled)?;
+
+        match choice {
+            "📝 Editar Herramientas (Actualizar versiones/URLs)" => {
+                manifest = edit_tools(manifest)?;
+            }
+            "📡 Validar URLs (Links Check)" => {
+                validate_all_urls(&manifest);
+            }
+            "💾 Guardar y Salir (Git Push)" => {
+                manifest.save_to_file(manifest_path)?;
+                println!("\n💾 'tools.json' guardado correctamente.");
+
+                let push = Confirm::new("¿Deseas subir los cambios a GitHub ahora?")
+                    .with_default(false)
+                    .prompt()
+                    .map_err(|_| BeError::Cancelled)?;
+
+                if push {
+                    run_git_automation(manifest_path)?;
+                }
+                break;
+            }
+            "❌ Cancelar y Salir" => {
+                println!("Operación cancelada.");
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+fn edit_tools(mut manifest: Manifest) -> Result<Manifest, BeError> {
     let mut new_tools = Vec::new();
 
     for tool in &manifest.tools {
@@ -49,20 +94,47 @@ pub fn generate_manifest() -> Result<(), BeError> {
             // Hashing
             println!("🔄 Calculando Hash SHA256 (Descargando temporalmente)...");
 
-            // Download to temp
             let temp_dir = std::env::temp_dir().join("Brisas_Hash_Calc");
             if !temp_dir.exists() {
                 fs::create_dir_all(&temp_dir)?;
             }
             let temp_file = temp_dir.join(format!("{}.tmp", tool.name));
 
-            // Force download (ignore cache for hashing new URL effectively to be sure)
-            // But reuse download logic.
-            // NOTE: We don't have a verify hash yet, so pass None.
             download::download_file(&new_url, &temp_file)?;
 
             let hash = download::calculate_hash(&temp_file)?;
             println!("   🔐 Hash calculado: {}", hash);
+
+            // VERIFY CONTENT
+            println!("   🔍 Verificando contenido del ZIP...");
+            let found = download::verify_zip_contains_file(&temp_file, &tool.check_file)?;
+            if found {
+                println!("   ✅ Archivo clave '{}' encontrado.", tool.check_file);
+            } else {
+                println!(
+                    "   ⚠️  ADVERTENCIA: No se encontró '{}' dentro del ZIP descargado.",
+                    tool.check_file
+                );
+                println!("   Esto podría indicar que la URL es incorrecta o la estructura del ZIP cambió.");
+
+                let confirm = Confirm::new("¿Deseas continuar de todos modos?")
+                    .with_default(false)
+                    .prompt()
+                    .map_err(|_| BeError::Cancelled)?;
+
+                if !confirm {
+                    // Abort update for this tool - keep old one?
+                    // Actually, if we abort, we probably want to restart this tool's loop or keep old.
+                    // For logic simplicity, if they abort, we keep the OLD tool.
+                    println!(
+                        "   ↩️  Cancelando edición de {}. Se mantiene la versión anterior.",
+                        tool.name
+                    );
+                    new_tools.push(tool.clone());
+                    let _ = fs::remove_file(&temp_file);
+                    continue;
+                }
+            }
 
             // Cleanup
             let _ = fs::remove_file(&temp_file);
@@ -78,20 +150,34 @@ pub fn generate_manifest() -> Result<(), BeError> {
     }
 
     manifest.tools = new_tools;
-    manifest.save_to_file(manifest_path)?;
-    println!("\n💾 'tools.json' guardado correctamente.");
+    Ok(manifest)
+}
 
-    // GIT PUSH AUTOMATION
-    let push = Confirm::new("¿Deseas subir los cambios a GitHub ahora? (Requiere git configurado)")
-        .with_default(false)
-        .prompt()
-        .map_err(|_| BeError::Cancelled)?;
+fn validate_all_urls(manifest: &Manifest) {
+    println!("\n📡 Verificando disponibilidad de URLs (HEAD Request)...");
+    let client = reqwest::blocking::Client::new();
 
-    if push {
-        run_git_automation(manifest_path)?;
+    for tool in &manifest.tools {
+        print!("   🔍 {}: ", tool.name);
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+
+        match client.head(&tool.url).send() {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    println!("✅ OK ({})", resp.status());
+                } else {
+                    println!("❌ ERROR ({}) - Link Posiblemente Roto", resp.status());
+                }
+            }
+            Err(e) => {
+                println!("❌ FALLÓ: {}", e);
+            }
+        }
     }
-
-    Ok(())
+    println!("\n--- Verificación completada ---\n");
+    println!("Presiona Enter para continuar...");
+    let _ = std::io::stdin().read_line(&mut String::new());
 }
 
 fn run_git_automation(file_path: &Path) -> Result<(), BeError> {

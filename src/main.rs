@@ -18,18 +18,18 @@ use run::run_command;
 fn main() {
     // Init Logger ignoring errors (fallback to no logs is fine for CLI ux)
     let _ = logger::init();
-    info!("Brisas CLI started.");
+    info!("Brisas CLI iniciado.");
 
     if std::env::args().len() == 1 {
         interactive_menu();
-        info!("Interactive menu closed.");
+        info!("Menú interactivo cerrado.");
         return;
     }
 
     let cli = Cli::parse();
 
     if let Err(e) = execute_command(&cli) {
-        error!("Fatal Error: {}", e);
+        error!("Error Fatal: {}", e);
         eprintln!("\n❌ Error Fatal: {}", e);
         std::process::exit(1);
     }
@@ -80,7 +80,7 @@ fn print_help() {
     println!("🌟 MANUAL DE USUARIO BRISAS ENV CLI 🌟");
     println!("--------------------------------------");
     println!("Este programa te ayuda a instalar y gestionar Node, MinGW y PowerShell sin ensuciar tu sistema.");
-    println!("");
+    println!();
     println!("🛠️  COMANDOS DISPONIBLES:");
     println!(
         "  init              -> Crea la configuración inicial (.dev-env-config) si no existe."
@@ -100,7 +100,7 @@ fn print_help() {
     println!("  run <cmd>         -> Ejecuta un comando suelto dentro del entorno 'mágico'.");
     println!("                       Ejemplo: 'be run npm start'");
     println!("  help              -> Muestra esta pantalla de ayuda.");
-    println!("");
+    println!();
     println!(
         "💡 TRUCO: Si ejecutas 'be.exe' (doble click) sin comandos, verás un MENÚ INTERACTIVO."
     );
@@ -144,13 +144,13 @@ fn interactive_menu() {
 
                 if let Err(e) = result {
                     eprintln!("\n❌ Ocurrió un error: {}", e);
-                    error!("Interactive menu error: {}", e);
+                    error!("Error en menú interactivo: {}", e);
                     println!("Presiona Enter para continuar...");
                     let _ = std::io::stdin().read_line(&mut String::new());
                 }
             }
             Err(_) => {
-                info!("Menu cancelled or interrupted.");
+                info!("Menú cancelado o interrumpido.");
                 break;
             }
         }

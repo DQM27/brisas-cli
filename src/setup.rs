@@ -1,6 +1,6 @@
 use crate::download;
 use crate::errors::BeError;
-use crate::manifest::Manifest; // Import Manifest
+use crate::manifest::Manifest; // Importar Manifest
 use inquire::{Select, Text};
 use log::{error, info};
 use std::env;
@@ -11,34 +11,34 @@ use winreg::RegKey;
 
 pub fn setup_system() -> Result<(), BeError> {
     println!("🛠️  Configurando Entorno Brisas en el Sistema...");
-    info!("Starting setup_system...");
+    info!("Iniciando setup_system...");
 
     let local_app_data = env::var("LOCALAPPDATA")
         .map_err(|_| BeError::Config("No se encontró %LOCALAPPDATA%".into()))?;
     let target_base = PathBuf::from(&local_app_data);
     println!("📂 Destino: {}", target_base.display());
 
-    // LOAD MANIFEST
+    // CARGAR MANIFIESTO
     let manifest_path = Path::new("tools.json");
     let manifest = if manifest_path.exists() {
-        info!("Loading manifest from local file: tools.json");
+        info!("Cargando manifiesto desde archivo local: tools.json");
         println!("📄 Usando manifiesto local: tools.json");
         match Manifest::load_from_file(manifest_path) {
             Ok(m) => m,
             Err(e) => {
-                error!("Failed to load local tools.json: {}", e);
+                error!("Fallo al cargar tools.json local: {}", e);
                 println!("⚠️  Error leyendo tools.json. Usando defaults.");
                 Manifest::default()
             }
         }
     } else {
         let remote_url = "https://raw.githubusercontent.com/DQM27/brisas-cli/main/tools.json";
-        info!("Fetching remote manifest from: {}", remote_url);
+        info!("Obteniendo manifiesto remoto desde: {}", remote_url);
         println!("🌐 Buscando manifiesto remoto...");
         match Manifest::load_from_url(remote_url) {
             Ok(m) => m,
             Err(e) => {
-                error!("Remote load failed: {}. Using compiled defaults.", e);
+                error!("Fallo carga remota: {}. Usando defaults compilados.", e);
                 println!(
                     "⚠️  No se pudo cargar config remota (Offline?). Usando defaults internos."
                 );
@@ -46,11 +46,14 @@ pub fn setup_system() -> Result<(), BeError> {
             }
         }
     };
-    info!("Manifest loaded with {} tools.", manifest.tools.len());
+    info!(
+        "Manifiesto cargado con {} herramientas.",
+        manifest.tools.len()
+    );
 
     let mut found_tools = Vec::new();
 
-    // 1. Check existing
+    // 1. Verificar existente
     for tool in &manifest.tools {
         let target_path = target_base.join(&tool.name);
         if target_path.join(&tool.check_file).exists() {
@@ -73,15 +76,15 @@ pub fn setup_system() -> Result<(), BeError> {
             .map_err(|_| BeError::Cancelled)?;
 
         if ans == options[0] {
-            // SEARCH LOCAL
+            // BUSCAR LOCAL
             handle_local_search(&manifest, &target_base, &mut found_tools)?;
         } else {
-            // DOWNLOAD (Now with Cache & Verification)
+            // DESCARGAR (Ahora con Caché y Verificación)
             handle_download(&manifest, &target_base, &mut found_tools)?;
         }
     }
 
-    // Register Registry
+    // Actualizar Registro
     register_in_path(&target_base)?;
 
     Ok(())
@@ -143,10 +146,10 @@ fn handle_download(
         println!("☁️  Procesando {}...", tool.name);
         let zip_name = format!("{}.zip", tool.name);
 
-        // ensure_downloaded handles Cache + SHA256 Verification
+        // ensure_downloaded maneja Caché + Verificación SHA256
         let cached_zip = download::ensure_downloaded(&tool.url, &zip_name, tool.sha256.as_deref())?;
 
-        // Extract
+        // Extraer
         let temp_extract = std::env::temp_dir().join(format!("{}_extract", tool.name));
         if temp_extract.exists() {
             let _ = fs::remove_dir_all(&temp_extract);
@@ -154,7 +157,7 @@ fn handle_download(
 
         download::extract_zip(&cached_zip, &temp_extract)?;
 
-        // Move to target
+        // Mover a destino
         let mut source_to_copy = temp_extract.clone();
         if let Ok(entries) = fs::read_dir(&temp_extract) {
             let items: Vec<_> = entries.filter_map(Result::ok).collect();
@@ -177,7 +180,7 @@ fn handle_download(
             found_tools.push((tool.name.clone(), target_path));
         }
 
-        // Cleanup (Only extract dir, keep Cache!)
+        // Limpieza (Solo dir temporal, mantén el Caché!)
         let _ = fs::remove_dir_all(&temp_extract);
     }
     Ok(())
@@ -200,9 +203,9 @@ fn register_in_path(target_base: &Path) -> Result<(), BeError> {
     let mut new_path_parts: Vec<String> = current_path.split(';').map(|s| s.to_string()).collect();
     let mut changed = false;
 
-    // Hardcoded logic for PATH registration is OK for now,
-    // or we could add `path_suffix` to Manifest if we want total decoupling.
-    // For now, keeping it simple as specific tools have specific bin folders.
+    // Lógica harcodeada para el registro PATH está bien por ahora,
+    // o podríamos añadir `path_suffix` al Manifiesto si queremos desacoplamiento total.
+    // Por ahora, manteniéndolo simple ya que las herramientas tienen carpetas bin específicas.
     let paths_to_add = vec![
         target_base.join("node").to_string_lossy().to_string(),
         target_base
@@ -253,7 +256,7 @@ fn find_folder_containing(base: &Path, file_pattern: &str) -> Option<PathBuf> {
 
 pub fn clean_system() -> Result<(), BeError> {
     println!("🧹 Limpiando Entorno Brisas del Sistema...");
-    info!("Starting clean_system...");
+    info!("Iniciando clean_system...");
 
     let local_app_data = env::var("LOCALAPPDATA")
         .map_err(|_| BeError::Config("No se encontró %LOCALAPPDATA%".into()))?;
@@ -261,25 +264,25 @@ pub fn clean_system() -> Result<(), BeError> {
 
     let tools = vec!["node", "mingw64", "pwsh"];
 
-    // 2. Remove Files
+    // 2. Eliminar Archivos
     for tool in &tools {
         let path = target_base.join(tool);
         if path.exists() {
             println!("  🔥 Eliminando carpeta: {}", path.display());
             if let Err(e) = fs::remove_dir_all(&path) {
-                error!("Failed to remove directory {}: {}", path.display(), e);
+                error!("Fallo al eliminar directorio {}: {}", path.display(), e);
                 eprintln!("❌ Error eliminando {}: {}", tool, e);
             } else {
-                info!("Removed directory: {}", path.display());
+                info!("Directorio eliminado: {}", path.display());
                 println!("    ✨ Eliminado.");
             }
         }
     }
 
-    // 3. Clean Registry
+    // 3. Limpiar Registro
     println!("📝 Limpiando Registro de Usuario (PATH)...");
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    // Use open_subkey_with_flags
+    // Usar open_subkey_with_flags
     let env_key = hkcu
         .open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)
         .map_err(|e| BeError::Setup(format!("Error abriendo registro: {}", e)))?;
@@ -293,7 +296,7 @@ pub fn clean_system() -> Result<(), BeError> {
     };
     let parts: Vec<&str> = current_path.split(';').collect();
 
-    let paths_to_remove = vec![
+    let paths_to_remove = [
         target_base.join("node").to_string_lossy().to_string(),
         target_base
             .join("mingw64")
@@ -323,7 +326,7 @@ pub fn clean_system() -> Result<(), BeError> {
             .map_err(|e| BeError::Setup(format!("Error guardando registro: {}", e)))?;
         println!("✅ Registro limpiado correctamente.");
         println!("⚠️  Reinicia tus terminales para ver los cambios.");
-        info!("Registry cleaned successfully.");
+        info!("Registro limpiado exitosamente.");
     } else {
         println!("✨ El registro ya estaba limpio.");
     }
@@ -349,7 +352,7 @@ pub fn check_status() {
     let tools = vec!["node", "mingw64", "pwsh"];
     let mut missing = false;
 
-    // 1. Files
+    // 1. Archivos
     println!("📂 Archivos (AppData\\Local):");
     for tool in &tools {
         let path = target_base.join(tool);
@@ -361,7 +364,7 @@ pub fn check_status() {
         }
     }
 
-    // 2. Registry
+    // 2. Registro
     println!("📝 Registro (User PATH):");
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok(env_key) = hkcu.open_subkey_with_flags("Environment", KEY_READ) {

@@ -7,7 +7,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
-/// Calculates the SHA256 hash of a file and returns it as a lowercase hex string.
+/// Calcula el hash SHA256 de un archivo y lo devuelve como string hex minúscula.
 pub fn calculate_hash(path: &Path) -> Result<String, BeError> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
@@ -16,9 +16,9 @@ pub fn calculate_hash(path: &Path) -> Result<String, BeError> {
     Ok(hex::encode(hash))
 }
 
-/// Downloads a file, utilizing a local cache directory.
-/// If `expected_hash` is provided, it verifies the file integrity.
-/// Returns the path to the valid file (in cache).
+/// Descarga un archivo, utilizando un directorio de caché local.
+/// Si `expected_hash` es proporcionado, verifica la integridad del archivo.
+/// Devuelve la ruta al archivo válido (en caché).
 pub fn ensure_downloaded(
     url: &str,
     file_name: &str,
@@ -31,43 +31,43 @@ pub fn ensure_downloaded(
 
     let target_path = cache_dir.join(file_name);
 
-    // 1. Check if exists
+    // 1. Verificar si existe
     if target_path.exists() {
-        info!("File found in cache: {}", target_path.display());
+        info!("Archivo encontrado en caché: {}", target_path.display());
         if let Some(hash) = expected_hash {
-            info!("Verifying integrity of cached file...");
+            info!("Verificando integridad del archivo en caché...");
             let current_hash = calculate_hash(&target_path)?;
             if current_hash == hash {
-                info!("Hash match! Using cached file.");
+                info!("¡Hash correcto! Usando archivo en caché.");
                 return Ok(target_path);
             } else {
-                warn!("Hash mismatch for cached file. Deleting and redownloading.");
-                warn!("Expected: {}", hash);
-                warn!("Actual:   {}", current_hash);
+                warn!("Hash incorrecto en caché. Eliminando y re-descargando.");
+                warn!("Esperado: {}", hash);
+                warn!("Obtenido: {}", current_hash);
                 fs::remove_file(&target_path)?;
             }
         } else {
-            // No hash provided, assume cached file is good (or we can't verify it)
-            info!("No hash provided for verification. Using cached file.");
+            // Sin hash proporcionado, asumir que el caché está bien
+            info!("Sin hash para verificar. Usando archivo en caché.");
             return Ok(target_path);
         }
     }
 
-    // 2. Download
+    // 2. Descargar
     download_file(url, &target_path)?;
 
-    // 3. Verify after download
+    // 3. Verificar después de descargar
     if let Some(hash) = expected_hash {
-        info!("Verifying integrity of downloaded file...");
+        info!("Verificando integridad del archivo descargado...");
         let current_hash = calculate_hash(&target_path)?;
         if current_hash != hash {
-            fs::remove_file(&target_path)?; // Delete bad file
+            fs::remove_file(&target_path)?; // Eliminar archivo malo
             return Err(BeError::Setup(format!(
-                "Integrity check failed for {}. Expected {}, got {}.",
+                "Falló la verificación de integridad para {}. Esperado {}, obtenido {}.",
                 file_name, hash, current_hash
             )));
         }
-        info!("Verification successful.");
+        info!("Verificación exitosa.");
     }
 
     Ok(target_path)
@@ -75,11 +75,11 @@ pub fn ensure_downloaded(
 
 pub fn download_file(url: &str, target_path: &Path) -> Result<(), BeError> {
     println!("⬇️  Descargando: {}", url);
-    info!("Downloading {} to {}", url, target_path.display());
+    info!("Descargando {} a {}", url, target_path.display());
 
     let mut response = reqwest::blocking::get(url)?;
 
-    // Check status by converting to error directly if needed
+    // Verificar estado convirtiendo a error directamente si es necesario
     if let Err(e) = response.error_for_status_ref() {
         return Err(BeError::Reqwest(e));
     }
@@ -115,7 +115,7 @@ pub fn download_file(url: &str, target_path: &Path) -> Result<(), BeError> {
 
 pub fn extract_zip(zip_path: &Path, extract_to: &Path) -> Result<(), BeError> {
     info!(
-        "Extracting {} to {}",
+        "Extrayendo {} a {}",
         zip_path.display(),
         extract_to.display()
     );
@@ -144,4 +144,20 @@ pub fn extract_zip(zip_path: &Path, extract_to: &Path) -> Result<(), BeError> {
         }
     }
     Ok(())
+}
+
+/// Verifica si un nombre de archivo dado existe dentro del archivo zip.
+/// Devuelve Ok(true) si se encuentra, Ok(false) si no.
+pub fn verify_zip_contains_file(zip_path: &Path, file_name: &str) -> Result<bool, BeError> {
+    let file = File::open(zip_path)?;
+    let mut archive = ZipArchive::new(file)?;
+
+    for i in 0..archive.len() {
+        let file = archive.by_index(i)?;
+        // Buscamos coincidencia exacta o coincidencia final (ej. "bin/gcc.exe" coincide con "mingw64/bin/gcc.exe")
+        if file.name() == file_name || file.name().ends_with(file_name) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }

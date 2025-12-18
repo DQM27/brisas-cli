@@ -64,7 +64,7 @@ impl Manifest {
 
     pub fn save_to_file(&self, path: &Path) -> Result<(), BeError> {
         let json = serde_json::to_string_pretty(self)
-            .map_err(|e| BeError::Config(format!("JSON Error: {}", e)))?;
+            .map_err(|e| BeError::Config(format!("Error de JSON: {}", e)))?;
         fs::write(path, json)?;
         Ok(())
     }

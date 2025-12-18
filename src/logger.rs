@@ -23,6 +23,6 @@ pub fn init() -> Result<(), Box<dyn std::error::Error>> {
         File::create(log_file)?,
     )])?;
 
-    log::info!("Logger initialized successfully.");
+    log::info!("Logger inicializado correctamente.");
     Ok(())
 }

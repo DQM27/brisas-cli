@@ -27,6 +27,6 @@ pub enum Commands {
     Status,
     /// Ver lista de comandos y ayuda
     Help,
-    /// (Admin) Generates/Updates the tools.json manifest
+    /// (Admin) Generar/Actualizar el manifiesto tools.json
     ManifestGen,
 }

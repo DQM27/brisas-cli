@@ -1,6 +1,6 @@
 [package]
 name = "be"
-version = "1.0.3"
+version = "1.0.10"
 edition = "2021"
 
 [dependencies]
@@ -20,3 +20,11 @@ sha2 = "0.10.9"
 hex = "0.4.3"
 log = "0.4.29"
 simplelog = "0.12.2"
+
+[profile.release]
+strip = true
+opt-level = "z"  # Optimize for size
+lto = true       # Link Time Optimization
+codegen-units = 1
+panic = "abort"  # No stack unwinding
+
