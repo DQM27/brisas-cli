@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::errors::BeError;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
@@ -26,7 +26,7 @@ impl Manifest {
                     version: "22.12.0".into(),
                     url: "https://nodejs.org/dist/v22.12.0/node-v22.12.0-win-x64.zip".into(),
                     check_file: "node.exe".into(),
-                    sha256: None, 
+                    sha256: None,
                 },
                 Tool {
                     name: "mingw64".into(),
@@ -37,11 +37,33 @@ impl Manifest {
                 },
                 Tool {
                     name: "pwsh".into(),
-                    version: "7.4.6".into(),
-                    url: "https://github.com/PowerShell/PowerShell/releases/download/v7.4.6/PowerShell-7.4.6-win-x64.zip".into(),
+                    version: "7.5.4".into(),
+                    url: "https://github.com/PowerShell/PowerShell/releases/download/v7.5.4/PowerShell-7.5.4-win-x64.zip".into(),
                     check_file: "pwsh.exe".into(),
                     sha256: None,
                 },
+                Tool {
+                    name: "git".into(),
+                    version: "2.47.1".into(),
+                    url: "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-64-bit.7z.exe".into(),
+                    check_file: "bin/git.exe".into(),
+                    sha256: None,
+                },
+                Tool {
+                    name: "vscodium".into(),
+                    version: "1.96.0".into(),
+                    url: "https://github.com/VSCodium/vscodium/releases/download/1.96.0.24351/VSCodium-win32-x64-1.96.0.24351.zip".into(),
+                    check_file: "VSCodium.exe".into(),
+                    sha256: None,
+                },
+                Tool {
+                    name: "rustup".into(),
+                    version: "1.27.1".into(),
+                    url: "https://win.rustup.rs/x86_64".into(),
+                    check_file: "rustup-init.exe".into(),
+                    sha256: None,
+                },
+
             ],
         }
     }

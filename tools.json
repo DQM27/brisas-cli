@@ -20,6 +20,27 @@
       "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.5.4/PowerShell-7.5.4-win-x64.zip",
       "check_file": "pwsh.exe",
       "sha256": "b40d192ae95ba6ccc4cc362ff4e1b18ca6fb5055bebbcd3920684e12701fa8f6"
+    },
+    {
+      "name": "git",
+      "version": "2.47.1",
+      "url": "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-64-bit.7z.exe",
+      "check_file": "bin/git.exe",
+      "sha256": null
+    },
+    {
+      "name": "vscodium",
+      "version": "1.96.0",
+      "url": "https://github.com/VSCodium/vscodium/releases/download/1.96.0.24351/VSCodium-win32-x64-1.96.0.24351.zip",
+      "check_file": "VSCodium.exe",
+      "sha256": null
+    },
+    {
+      "name": "rustup",
+      "version": "1.27.1",
+      "url": "https://win.rustup.rs/x86_64",
+      "check_file": "rustup-init.exe",
+      "sha256": null
     }
   ]
 }

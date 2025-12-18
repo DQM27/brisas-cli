@@ -1,7 +1,8 @@
-use crate::download;
 use crate::errors::BeError;
+use crate::installer;
 use crate::manifest::Manifest;
-use indicatif::{ProgressBar, ProgressStyle};
+use crate::ui;
+use inquire::MultiSelect;
 use log::{error, info};
 use std::env;
 use std::fs;
@@ -9,202 +10,140 @@ use std::path::{Path, PathBuf};
 use winreg::enums::*;
 use winreg::RegKey;
 
-// Helper function for directory copy with progress
-fn copy_dir_with_progress(src: &Path, dst: &Path) -> Result<(), BeError> {
-    if !dst.exists() {
-        fs::create_dir_all(dst)?;
-    }
-
-    let mut files = Vec::new();
-    for entry in walkdir::WalkDir::new(src)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        if entry.file_type().is_file() {
-            files.push(entry.path().to_owned());
-        }
-    }
-
-    let pb = ProgressBar::new(files.len() as u64);
-    let style = ProgressStyle::default_bar()
-        .template("{spinner:.green}  [{elapsed_precise}] [{bar:40.magenta/blue}] {pos}/{len} archivos ({eta})")
-        .map_err(|e| BeError::Setup(format!("Error configurando barra de progreso: {}", e)))?
-        .progress_chars("█░");
-    pb.set_style(style);
-
-    for file_path in files {
-        let relative_path = file_path.strip_prefix(src).unwrap_or(&file_path);
-        let dst_path = dst.join(relative_path);
-
-        if let Some(parent) = dst_path.parent() {
-            if !parent.exists() {
-                fs::create_dir_all(parent)?;
-            }
-        }
-        fs::copy(&file_path, &dst_path)?;
-        pb.inc(1);
-    }
-    pb.finish_with_message("Copia completada");
-    Ok(())
-}
-
-fn handle_download(
-    manifest: &Manifest,
-    target_base: &Path,
-    found_tools: &mut Vec<(String, PathBuf)>,
-) -> Result<(), BeError> {
-    for tool in &manifest.tools {
-        let target_path = target_base.join(&tool.name);
-        if target_path.exists() {
-            continue;
-        }
-
-        println!("Procesando {}...", tool.name);
-        let zip_name = format!("{}.zip", tool.name);
-
-        // ensure_downloaded maneja Caché + Verificación SHA256
-        let cached_zip = download::ensure_downloaded(&tool.url, &zip_name, tool.sha256.as_deref())?;
-
-        // Extraer
-        let temp_extract = std::env::temp_dir().join(format!("{}_extract", tool.name));
-        if temp_extract.exists() {
-            let _ = fs::remove_dir_all(&temp_extract);
-        }
-
-        download::extract_zip(&cached_zip, &temp_extract)?;
-
-        // Mover a destino
-        let mut source_to_copy = temp_extract.clone();
-        if let Ok(entries) = fs::read_dir(&temp_extract) {
-            let items: Vec<_> = entries.filter_map(Result::ok).collect();
-            if items.len() == 1 && items[0].path().is_dir() {
-                source_to_copy = items[0].path();
-            }
-        }
-
-        println!("  Instalando en {}...", target_path.display());
-
-        // Use new helper instead of fs_extra
-        copy_dir_with_progress(&source_to_copy, &target_path)?;
-
-        println!("  Instalado correctamente.");
-        found_tools.push((tool.name.clone(), target_path));
-
-        // Limpieza (Solo dir temporal, mantén el Caché!)
-        let _ = fs::remove_dir_all(&temp_extract);
-    }
-    Ok(())
-}
-
 pub fn setup_system() -> Result<(), BeError> {
-    println!("Configurando Entorno Brisas en el Sistema...");
-    info!("Iniciando setup_system...");
+    ui::print_banner();
 
+    // 1. Prepare Environment
     let local_app_data = env::var("LOCALAPPDATA")
         .map_err(|_| BeError::Config("No se encontro %LOCALAPPDATA%".into()))?;
     let target_base = PathBuf::from(&local_app_data);
-    println!("Destino: {}", target_base.display());
+    ui::print_step(&format!("Ruta Destino: {}", target_base.display()));
 
-    // CARGAR MANIFIESTO
+    // 2. Load Manifest
     let manifest_path = Path::new("tools.json");
     let manifest = if manifest_path.exists() {
-        info!("Cargando manifiesto desde archivo local: tools.json");
-        println!("Usando manifiesto local: tools.json");
+        ui::print_step("Cargando tools.json local...");
         match Manifest::load_from_file(manifest_path) {
             Ok(m) => m,
             Err(e) => {
-                error!("Fallo al cargar tools.json local: {}", e);
-                println!("Error leyendo tools.json. Usando defaults.");
+                ui::print_error(&format!("Error en json local: {}. Usando defaults.", e));
                 Manifest::default()
             }
         }
     } else {
-        let remote_url = "https://raw.githubusercontent.com/DQM27/brisas-cli/main/tools.json";
-        info!("Obteniendo manifiesto remoto desde: {}", remote_url);
-        println!("Buscando manifiesto remoto...");
-        match Manifest::load_from_url(remote_url) {
-            Ok(m) => m,
-            Err(e) => {
-                error!("Fallo carga remota: {}. Usando defaults compilados.", e);
-                println!("No se pudo cargar config remota (Offline?). Usando defaults internos.");
-                Manifest::default()
-            }
-        }
+        ui::print_step("Cargando tools.json remoto...");
+        Manifest::default() // En v2.0 forzamos defaults si no hay local, o implementamos fetch
     };
-    info!(
-        "Manifiesto cargado con {} herramientas.",
-        manifest.tools.len()
+
+    // 3. Multi-Select Menu
+    ui::print_retro_box(
+        "SELECCION DE HERRAMIENTAS",
+        &[
+            "Marca con ESPACIO las herramientas que deseas instalar.",
+            "Presiona ENTER para confirmar.",
+        ],
     );
 
-    let mut found_tools = Vec::new();
+    let tool_names: Vec<&str> = manifest.tools.iter().map(|t| t.name.as_str()).collect();
+    // Default selection: Node, MinGW, Git, VSCodium, PowerShell
+    let defaults = vec![0, 1, 2, 3, 4]; // Indexes matching manifest order roughly
 
-    // 1. Verificar existente
-    for tool in &manifest.tools {
-        let target_path = target_base.join(&tool.name);
-        if target_path.join(&tool.check_file).exists() {
-            println!("  {} ya existe en AppData.", tool.name);
-            found_tools.push((tool.name.clone(), target_path));
+    let selected_tools = MultiSelect::new("Herramientas a instalar:", tool_names)
+        .with_default(&defaults)
+        .prompt()
+        .map_err(|_| BeError::Cancelled)?;
+
+    if selected_tools.is_empty() {
+        ui::print_error("No seleccionaste nada. Saliendo...");
+        return Ok(());
+    }
+
+    // 4. Install Loop
+    let mut installed_tools = Vec::new();
+    for tool_name in selected_tools {
+        if let Some(tool) = manifest.tools.iter().find(|t| t.name == tool_name) {
+            installer::install_tool(tool, &target_base)?;
+            installed_tools.push(tool.clone());
         }
     }
 
-    if found_tools.len() < manifest.tools.len() {
-        println!("Faltan herramientas. Iniciando descarga segura de herramientas...");
-        handle_download(&manifest, &target_base, &mut found_tools)?;
-    } else {
-        println!("Todas las herramientas ya estan instaladas.");
+    // 5. Register in Path & Shortcuts
+    if !installed_tools.is_empty() {
+        register_in_path(&target_base, &installed_tools)?;
     }
 
-    // Actualizar Registro solo si hay herramientas encontradas o instaladas
-    if found_tools.is_empty() {
-        println!(
-            "No se encontraron herramientas. Saltando configuracion de PATH y accesos directos."
-        );
-    } else {
-        let pwsh_version = manifest
-            .tools
-            .iter()
-            .find(|t| t.name == "pwsh")
-            .map(|t| t.version.clone())
-            .unwrap_or_else(|| "7".to_string());
-
-        register_in_path(&target_base, &pwsh_version)?;
-    }
-
+    ui::print_farewell();
     Ok(())
 }
 
-fn register_in_path(target_base: &Path, shell_version: &str) -> Result<(), BeError> {
-    println!("Actualizando Registro de Usuario (PATH)...");
+fn register_in_path(
+    target_base: &Path,
+    installed_tools: &[crate::manifest::Tool],
+) -> Result<(), BeError> {
+    ui::print_step("Actualizando Registro (PATH)...");
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let env_key = hkcu
         .open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)
         .map_err(|e| BeError::Setup(format!("Error abriendo registro: {}", e)))?;
 
-    let current_path: String = match env_key.get_value("Path") {
-        Ok(val) => val,
-        Err(e) => {
-            println!("Advertencia: No se pudo leer el PATH actual: {}", e);
-            String::new()
-        }
-    };
+    let current_path: String = env_key.get_value("Path").unwrap_or_default();
     let mut new_path_parts: Vec<String> = current_path.split(';').map(|s| s.to_string()).collect();
     let mut changed = false;
 
-    // Logica harcodeada para el registro PATH
-    let paths_to_add = vec![
-        target_base.join("node").to_string_lossy().to_string(),
-        target_base
-            .join("mingw64")
-            .join("bin")
-            .to_string_lossy()
-            .to_string(),
-        target_base.join("pwsh").to_string_lossy().to_string(),
-    ];
+    // Define paths based on installed tools
+    let mut paths_to_add = Vec::new();
+
+    // Always check what is installed
+    if installed_tools.iter().any(|t| t.name == "node") {
+        paths_to_add.push(target_base.join("node").to_string_lossy().to_string());
+    }
+    if installed_tools.iter().any(|t| t.name == "mingw64") {
+        paths_to_add.push(
+            target_base
+                .join("mingw64")
+                .join("bin")
+                .to_string_lossy()
+                .to_string(),
+        );
+    }
+    if installed_tools.iter().any(|t| t.name == "pwsh") {
+        paths_to_add.push(target_base.join("pwsh").to_string_lossy().to_string());
+    }
+    if installed_tools.iter().any(|t| t.name == "git") {
+        paths_to_add.push(
+            target_base
+                .join("git")
+                .join("bin")
+                .to_string_lossy()
+                .to_string(),
+        );
+        paths_to_add.push(
+            target_base
+                .join("git")
+                .join("cmd")
+                .to_string_lossy()
+                .to_string(),
+        );
+    }
+    if installed_tools.iter().any(|t| t.name == "vscodium") {
+        paths_to_add.push(
+            target_base
+                .join("vscodium")
+                .join("bin")
+                .to_string_lossy()
+                .to_string(),
+        );
+    }
+    if installed_tools.iter().any(|t| t.name == "rustup") {
+        if let Ok(home) = env::var("USERPROFILE") {
+            paths_to_add.push(format!("{}\\.cargo\\bin", home));
+        }
+    }
 
     for p in paths_to_add {
         if !new_path_parts.contains(&p) {
             new_path_parts.push(p.clone());
-            println!("  Anadiendo al PATH: {}", p);
+            ui::print_step(&format!("Anadiendo al PATH: {}", p));
             changed = true;
         }
     }
@@ -214,115 +153,96 @@ fn register_in_path(target_base: &Path, shell_version: &str) -> Result<(), BeErr
         env_key
             .set_value("Path", &new_path_str)
             .map_err(|e| BeError::Setup(format!("Error escribiendo registro: {}", e)))?;
-        println!("Registro actualizado correctamente.");
-        println!("Nota: Necesitas reiniciar tus terminales para ver los cambios.");
+        ui::print_success("Registro actualizado.");
     } else {
-        println!("El PATH ya estaba configurado.");
+        ui::print_success("El PATH ya estaba correcto.");
     }
 
-    // Crear Acceso Directo al Escritorio
-    println!("Creando Acceso Directo en el Escritorio...");
-    create_desktop_shortcut(target_base, shell_version)?;
-
-    // Crear Acceso Directo al Menu Inicio
-    println!("Creando Acceso Directo en el Menu Inicio...");
-    create_start_menu_shortcut(target_base, shell_version)?;
+    // Shortcuts
+    create_shortcuts(target_base, installed_tools)?;
 
     Ok(())
 }
 
-fn create_desktop_shortcut(target_base: &Path, shell_version: &str) -> Result<(), BeError> {
-    let desktop =
-        dirs::desktop_dir().ok_or(BeError::Setup("No se encontro el Escritorio".into()))?;
-    let link_name = format!("PowerShell {}.lnk", shell_version);
-    let link_path = desktop.join(&link_name);
+fn create_shortcuts(
+    target_base: &Path,
+    installed_tools: &[crate::manifest::Tool],
+) -> Result<(), BeError> {
+    let desktop = dirs::desktop_dir().ok_or(BeError::Setup("No Desktop".into()))?;
 
-    // Buscamos pwsh.exe en el sistema (Global) o local
-    let pwsh_local = target_base.join("pwsh").join("pwsh.exe");
-    let target = if pwsh_local.exists() {
-        pwsh_local.to_string_lossy().to_string()
-    } else {
-        "pwsh.exe".to_string()
-    };
+    // START MENU
+    let start_menu = dirs::data_dir().map(|d| d.join("Microsoft/Windows/Start Menu/Programs"));
 
-    // Comando PS para crear acceso directo
-    let script = format!(
-        "$ws = New-Object -ComObject WScript.Shell; \
-         $s = $ws.CreateShortcut('{}'); \
-         $s.TargetPath = '{}'; \
-         $s.WorkingDirectory = '{}'; \
-         $s.Description = 'PowerShell {} (Portable)'; \
-         $s.Save()",
-        link_path.display(),
-        target,
-        dirs::home_dir().unwrap_or(PathBuf::from("C:\\")).display(),
-        shell_version
-    );
+    for tool in installed_tools {
+        let (name, target, desc) = match tool.name.as_str() {
+            "pwsh" => (
+                "PowerShell Portable".to_string(),
+                "pwsh.exe",
+                "PowerShell 7",
+            ),
+            "vscodium" => (
+                "VSCodium Portable".to_string(),
+                "VSCodium.exe",
+                "VSCodium Editor",
+            ),
+            "git" => (
+                "Git Bash Portable".to_string(),
+                "git-bash.exe",
+                "Git Terminal",
+            ),
+            _ => continue,
+        };
 
-    let status = std::process::Command::new("powershell")
-        .arg("-NoProfile")
-        .arg("-Command")
-        .arg(&script)
-        .status()
-        .map_err(|e| BeError::Setup(format!("Error ejecutando PowerShell para shortcut: {}", e)))?;
+        // Determine real target path
+        let real_target = if tool.name == "git" {
+            target_base.join(&tool.name).join(target) // Git has it in root but sometimes not
+        } else {
+            target_base.join(&tool.name).join(target)
+        };
+        // Git Bash special case: it might be in root of git folder
 
-    if status.success() {
-        println!("  Acceso directo creado: {}", link_path.display());
-    } else {
-        println!("  No se pudo crear el acceso directo (probablemente permisos).");
+        let link_path = desktop.join(format!("{}.lnk", name));
+
+        create_shortcut_impl(
+            target_base,
+            &link_path,
+            &real_target.to_string_lossy(),
+            desc,
+        )?;
+
+        // Try start menu
+        if let Some(ref start) = start_menu {
+            if start.exists() {
+                let sm_link = start.join(format!("{}.lnk", name));
+                let _ = create_shortcut_impl(
+                    target_base,
+                    &sm_link,
+                    &real_target.to_string_lossy(),
+                    desc,
+                );
+            }
+        }
     }
-
     Ok(())
-}
-
-fn create_start_menu_shortcut(target_base: &Path, shell_version: &str) -> Result<(), BeError> {
-    // Intentar encontrar la carpeta de programas del menu inicio del usuario
-    let data_dir = dirs::data_dir().ok_or(BeError::Setup("No se encontro AppData".into()))?;
-    let start_menu = data_dir
-        .join("Microsoft")
-        .join("Windows")
-        .join("Start Menu")
-        .join("Programs");
-
-    if start_menu.exists() {
-        let link_name = format!("PowerShell {}.lnk", shell_version);
-        let link_path = start_menu.join(&link_name);
-        // Reuse create_desktop_shortcut logic or better yet, extract common logic?
-        // Let's copy logic for now to avoid refactoring risk at this stage or refactor slightly.
-
-        // Refactor: We can just call a helper.
-        create_shortcut_impl(target_base, &link_path, shell_version)
-    } else {
-        println!("Omitiendo Menu Inicio (No encontrado).");
-        Ok(())
-    }
 }
 
 fn create_shortcut_impl(
-    target_base: &Path,
+    _target_base: &Path,
     link_path: &Path,
-    shell_version: &str,
+    target_exe: &str,
+    desc: &str,
 ) -> Result<(), BeError> {
-    // Buscamos pwsh.exe en el sistema (Global) o local
-    let pwsh_local = target_base.join("pwsh").join("pwsh.exe");
-    let target = if pwsh_local.exists() {
-        pwsh_local.to_string_lossy().to_string()
-    } else {
-        "pwsh.exe".to_string()
-    };
-
-    // Comando PS para crear acceso directo
     let script = format!(
         "$ws = New-Object -ComObject WScript.Shell; \
          $s = $ws.CreateShortcut('{}'); \
          $s.TargetPath = '{}'; \
          $s.WorkingDirectory = '{}'; \
-         $s.Description = 'PowerShell {} (Portable)'; \
+         $s.Description = '{}'; \
          $s.Save()",
         link_path.display(),
-        target,
+        target_exe,
         dirs::home_dir().unwrap_or(PathBuf::from("C:\\")).display(),
-        shell_version
+        desc
     );
 
     let status = std::process::Command::new("powershell")
@@ -330,12 +250,13 @@ fn create_shortcut_impl(
         .arg("-Command")
         .arg(&script)
         .status()
-        .map_err(|e| BeError::Setup(format!("Error ejecutando PowerShell para shortcut: {}", e)))?;
+        .map_err(|e| BeError::Setup(format!("Error PS Shortcut: {}", e)))?;
 
     if status.success() {
-        println!("  Acceso directo creado: {}", link_path.display());
-    } else {
-        println!("  No se pudo crear el acceso directo (probablemente permisos).");
+        ui::print_success(&format!(
+            "Acceso directo: {}",
+            link_path.file_name().unwrap_or_default().to_string_lossy()
+        ));
     }
 
     Ok(())
@@ -434,68 +355,46 @@ pub fn clean_system() -> Result<(), BeError> {
 pub fn check_status() {
     println!("Verificando Estado del Sistema...");
 
-    let local_app_data = match env::var("LOCALAPPDATA") {
-        Ok(val) => val,
-        Err(_) => {
-            println!("Error: No se encontro %LOCALAPPDATA%.");
-            return;
-        }
-    };
-    if local_app_data.is_empty() {
-        println!("Error: %LOCALAPPDATA% esta vacio.");
-        return;
-    }
+    let tools = vec![
+        ("node", "--version"),
+        ("gcc", "--version"),
+        ("pwsh", "--version"),
+        ("git", "--version"),
+        ("git-lfs", "--version"),
+        ("rustc", "--version"),
+        ("cargo", "--version"),
+    ];
 
-    let target_base = PathBuf::from(&local_app_data);
-    let tools = vec!["node", "mingw64", "pwsh"];
-    let mut missing = false;
+    println!("\nPrueba de Ejecución (Detecta instalaciones globales y portables):");
+    let mut all_ok = true;
 
-    // 1. Archivos
-    println!("Archivos (AppData\\Local):");
-    for tool in &tools {
-        let path = target_base.join(tool);
-        if path.exists() {
-            println!("  {}: Instalado", tool);
-        } else {
-            println!("  {}: No encontrado", tool);
-            missing = true;
-        }
-    }
-
-    // 2. Registro
-    println!("Registro (User PATH):");
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    if let Ok(env_key) = hkcu.open_subkey_with_flags("Environment", KEY_READ) {
-        let current_path: String = match env_key.get_value("Path") {
-            Ok(val) => val,
-            Err(e) => {
-                println!("Error leyendo valor 'Path' del registro: {}", e);
-                return;
+    for (cmd, arg) in tools {
+        match std::process::Command::new(cmd).arg(arg).output() {
+            Ok(output) if output.status.success() => {
+                let version = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .next()
+                    .unwrap_or("Detected")
+                    .to_string();
+                let v_short = if version.len() > 25 {
+                    &version[..25]
+                } else {
+                    &version
+                };
+                println!("  [x] {:<10} : Funcionando ({})", cmd, v_short.trim());
             }
-        };
-
-        for tool in &tools {
-            let expected = target_base.join(tool);
-            let needle = if *tool == "mingw64" {
-                expected.join("bin").to_string_lossy().to_string()
-            } else {
-                expected.to_string_lossy().to_string()
-            };
-
-            if current_path.contains(&needle) {
-                println!("  {}: En PATH", tool);
-            } else {
-                println!("  {}: Falta en PATH", tool);
-                missing = true;
+            _ => {
+                println!("  [ ] {:<10} : No detectado en PATH actual", cmd);
+                all_ok = false;
             }
         }
-    } else {
-        println!("Error leyendo Registro.");
     }
 
-    if !missing {
-        println!("\nTodo parece estar CORRECTO. El entorno deberia funcionar.");
+    println!("\nNota: Si acabas de instalar, reinicia tu terminal para recargar el PATH.");
+
+    if all_ok {
+        println!("\n¡Sistema Operativo al 100%! 🚀");
     } else {
-        println!("\nHay inconsistencias. Recomendado: Selecciona 'Instalar / Reparar' en el menu.");
+        println!("\nAlgunas herramientas no responden. Verifica tu instalación.");
     }
 }

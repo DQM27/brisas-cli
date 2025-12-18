@@ -7,7 +7,7 @@ fn test_version() {
     cmd.arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("be 1.0."));
+        .stdout(predicate::str::contains("be 2.0.0"));
 }
 
 #[test]

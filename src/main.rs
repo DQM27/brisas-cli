@@ -3,10 +3,12 @@ mod cli;
 mod config;
 mod download;
 mod errors;
+mod installer;
 mod logger;
 mod manifest;
 mod run;
-mod setup;
+pub mod setup;
+mod ui;
 
 use clap::Parser;
 use cli::{Cli, Commands};
@@ -110,7 +112,11 @@ fn print_help() {
 }
 
 fn interactive_menu() {
-    println!("Brisas Env Manager (CLI)");
+    ui::print_banner();
+    ui::print_retro_box(
+        "MENU PRINCIPAL",
+        &["Selecciona una opción con las flechas", "y presiona ENTER."],
+    );
 
     let options = vec![
         "Iniciar Shell Portable",
