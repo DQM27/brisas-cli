@@ -1,6 +1,9 @@
+[build-dependencies]
+winres = "0.1"
+
 [package]
 name = "be"
-version = "1.0.20"
+version = "1.0.22"
 edition = "2021"
 
 [dependencies]
